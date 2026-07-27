@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:intl/intl.dart';
@@ -117,14 +117,18 @@ class _TasksTabViewState extends State<TasksTabView> {
     return Container(
       color: Colors.white,
       width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            _buildNavTab('Assigned ($assigned)', 0),
-            _buildNavTab('In Progress ($inProgress)', 1),
-            _buildNavTab('Completed ($completed)', 2),
-            _buildNavTab('Overdue ($overdue)', 3),
+            _buildNavTab('Assigned($assigned)', 0),
+            const SizedBox(width: 8),
+            _buildNavTab('In Progress($inProgress)', 1),
+            const SizedBox(width: 8),
+            _buildNavTab('Completed($completed)', 2),
+            const SizedBox(width: 8),
+            _buildNavTab('Overdue($overdue)', 3),
           ],
         ),
       ),
@@ -136,21 +140,21 @@ class _TasksTabViewState extends State<TasksTabView> {
     return GestureDetector(
       onTap: () => setState(() => _selectedTab = index),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: isActive ? const Color(0xFF5C5CFF) : Colors.transparent,
-              width: 2,
-            ),
+          color: isActive ? const Color(0xFF5C5CFF) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? const Color(0xFF5C5CFF) : const Color(0xFFE2E8F0),
+            width: 1,
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
-            color: isActive ? const Color(0xFF5C5CFF) : const Color(0xFF9CA3AF),
+            color: isActive ? Colors.white : const Color(0xFF64748B),
           ),
         ),
       ),

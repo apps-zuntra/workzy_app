@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -114,20 +114,12 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
         final now = DateTime.now();
         final todayStr = DateFormat('yyyy-MM-dd').format(now);
 
-        Map<String, dynamic>? todayData;
-        try {
-          final doc = docs.firstWhere((d) => d.id == todayStr);
-          todayData = doc.data() as Map<String, dynamic>;
-        } catch (_) {}
-
         return SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildTodayCard(todayData, now),
-              const SizedBox(height: 20),
               _buildThisWeek(docs, now),
               const SizedBox(height: 20),
               _buildMonthlySummary(docs, now),

@@ -1,18 +1,21 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:attendance_app/theme/app_theme.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:attendance_app/screens/create_announcement_wizard.dart';
 
 class AnnouncementsTabView extends StatefulWidget {
   final bool isAdmin;
   final String? departmentId;
+  final VoidCallback? onCreateAnnouncement;
 
   const AnnouncementsTabView({
     super.key,
     required this.isAdmin,
     this.departmentId,
+    this.onCreateAnnouncement,
   });
 
   @override
@@ -22,6 +25,7 @@ class AnnouncementsTabView extends StatefulWidget {
 class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
   int _selectedCategoryTab = 0; // 0: All, 1: HR, 2: Policy, 3: Events, 4: Manager Update
   bool _isCreatingAnnouncement = false;
+  late final Stream<QuerySnapshot> _announcementsStream;
 
   // Create Announcement State
   final _titleController = TextEditingController();
@@ -31,6 +35,15 @@ class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
 
   final _categories = ['All', 'HR', 'Policy', 'Events', 'Manager Update', 'Birthdays', 'New Hires'];
   final _createCategories = ['Manager Update', 'Policy', 'Events', 'Reminders', 'Birthdays', 'New Hires'];
+
+  @override
+  void initState() {
+    super.initState();
+    _announcementsStream = FirestoreService.announcementsCol
+        .where('status', isEqualTo: 'published')
+        .orderBy('timestamp', descending: true)
+        .snapshots();
+  }
 
   @override
   void dispose() {
@@ -117,7 +130,22 @@ class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
         itemBuilder: (context, index) {
           if (index == _categories.length) {
             return GestureDetector(
-              onTap: () => setState(() => _isCreatingAnnouncement = true),
+              onTap: () {
+                if (widget.onCreateAnnouncement != null) {
+                  widget.onCreateAnnouncement!();
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => Scaffold(
+                        body: CreateAnnouncementWizard(
+                          onClose: () => Navigator.pop(context),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+              },
               child: Container(
                 width: 36,
                 height: 36,
@@ -482,17 +510,13 @@ class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
       return _buildCreateAnnouncementView();
     }
 
-    Query<Map<String, dynamic>> query = FirestoreService.announcementsCol
-        .where('status', isEqualTo: 'published')
-        .orderBy('timestamp', descending: true);
-
     return Column(
       children: [
         _buildCategoryTabs(),
         const Divider(height: 1, color: Color(0xFFE5E7EB)),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: query.snapshots(),
+            stream: _announcementsStream,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
               if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));

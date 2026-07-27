@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,9 +13,15 @@ import 'package:attendance_app/utils/notification_helper.dart';
 import 'package:attendance_app/utils/notification_service.dart';
 import 'package:attendance_app/widgets/live_attendance_builder.dart';
 import 'package:attendance_app/widgets/notification_action.dart';
+
+import 'package:attendance_app/screens/create_announcement_wizard.dart';
 import 'package:attendance_app/widgets/announcements_tab_view.dart';
 import 'package:attendance_app/widgets/location_map_card.dart';
 import 'package:attendance_app/widgets/full_map_screen.dart';
+import 'package:attendance_app/widgets/team_members_view.dart';
+import 'package:attendance_app/widgets/team_feed_view.dart';
+import 'package:attendance_app/widgets/team_tasks_view.dart';
+
 class ManagerHomeTab extends StatefulWidget {
   final Function(int)? onTabChange;
   const ManagerHomeTab({super.key, this.onTabChange});
@@ -34,6 +40,7 @@ class _ManagerHomeTabState extends State<ManagerHomeTab> {
   late final Stream<DocumentSnapshot> _todayAttendanceStream;
   LocationData? _currentLocationData;
   bool _isCheckingInOut = false;
+  bool _isCreatingAnnouncement = false;
   Timer? _timer;
 
   // Tabs state
@@ -209,32 +216,50 @@ class _ManagerHomeTabState extends State<ManagerHomeTab> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9), // Light bg from image
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(),
-            _buildTopNavigation(),
-            _buildSubNavigation(),
-            Expanded(
-              child: _selectedMainTab == 0
-                  ? (_selectedSubTab == 0
-                      ? _buildDashboardView()
-                      : _selectedSubTab == 1
-                          ? _buildApprovalsView()
-                          : _selectedSubTab == 2
-                              ? const AnnouncementsTabView(isAdmin: false)
-                              : const Center(child: Text('Coming Soon')))
-                  : _selectedMainTab == 2
-                      ? (_selectedSubTab == 0
-                          ? _buildOrgOverviewView()
-                          : _selectedSubTab == 1
-                              ? _buildOrgEmployeesView()
-                              : const Center(child: Text('Coming Soon')))
-                      : const Center(child: Text('Coming Soon')),
+      body: _isCreatingAnnouncement
+          ? CreateAnnouncementWizard(
+              onClose: () => setState(() => _isCreatingAnnouncement = false),
+            )
+          : SafeArea(
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  _buildTopNavigation(),
+                  _buildSubNavigation(),
+                  Expanded(
+                    child: _selectedMainTab == 0
+                        ? (_selectedSubTab == 0
+                            ? _buildDashboardView()
+                            : _selectedSubTab == 1
+                                ? _buildApprovalsView()
+                                : _selectedSubTab == 2
+                                    ? AnnouncementsTabView(
+                                        isAdmin: false,
+                                        onCreateAnnouncement: () => setState(() => _isCreatingAnnouncement = true),
+                                      )
+                                    : const Center(child: Text('Coming Soon')))
+                        : _selectedMainTab == 1
+                            ? (_selectedSubTab == 0
+                                ? const TeamMembersView()
+                                : _selectedSubTab == 1
+                                    ? const TeamFeedView()
+                                    : _selectedSubTab == 2
+                                        ? AnnouncementsTabView(
+                                            isAdmin: false,
+                                            onCreateAnnouncement: () => setState(() => _isCreatingAnnouncement = true),
+                                          )
+                                        : const TeamTasksView())
+                            : _selectedMainTab == 2
+                                ? (_selectedSubTab == 0
+                                    ? _buildOrgOverviewView()
+                                    : _selectedSubTab == 1
+                                        ? _buildOrgEmployeesView()
+                                        : const Center(child: Text('Coming Soon')))
+                                : const Center(child: Text('Coming Soon')),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -368,7 +393,6 @@ class _ManagerHomeTabState extends State<ManagerHomeTab> {
   }
 
   Widget _buildSubNavigation() {
-    if (_selectedMainTab == 1) return const SizedBox.shrink(); // Team has no sub tabs yet
     
     return Container(
       color: Colors.white,
@@ -384,12 +408,19 @@ class _ManagerHomeTabState extends State<ManagerHomeTab> {
                   _buildSubTab('Announcements', 2),
                   _buildSubTab('Calendar', 3),
                 ]
-              : [
-                  _buildSubTab('Overview', 0),
-                  _buildSubTab('Employees', 1),
-                  _buildSubTab('Departments', 2),
-                  _buildSubTab('People', 3),
-                ],
+              : _selectedMainTab == 1
+                  ? [
+                      _buildSubTab('Members', 0),
+                      _buildSubTab('Feed', 1),
+                      _buildSubTab('Announcements', 2),
+                      _buildSubTab('Tasks', 3),
+                    ]
+                  : [
+                      _buildSubTab('Overview', 0),
+                      _buildSubTab('Employees', 1),
+                      _buildSubTab('Departments', 2),
+                      _buildSubTab('People', 3),
+                    ],
         ),
       ),
     );

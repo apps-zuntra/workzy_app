@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -56,7 +56,7 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
                   const SizedBox(width: 8),
                   _toggleChip('Monthly', !_isWeekly, () => setState(() => _isWeekly = false)),
                   const Spacer(),
-                  _monthDropdown(),
+                  _filterChip(),
                 ],
               ),
             ),
@@ -80,42 +80,46 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? AppTheme.primary : Colors.white,
-          borderRadius: BorderRadius.circular(24),
+          color: isActive ? const Color(0xFF5C5CFF) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: isActive ? AppTheme.primary : AppTheme.divider),
+              color: isActive ? const Color(0xFF5C5CFF) : const Color(0xFFE2E8F0)),
         ),
         child: Text(label,
             style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: isActive ? Colors.white : AppTheme.textMuted)),
+                color: isActive ? Colors.white : const Color(0xFF64748B))),
       ),
     );
   }
 
-  Widget _monthDropdown() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.divider),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.calendar_today_outlined,
-              size: 14, color: AppTheme.textMuted),
-          const SizedBox(width: 6),
-          Text(DateFormat('MMM yyyy').format(_selectedMonth),
-              style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary)),
-        ],
+  // Month navigation is now done directly from the calendar header
+  Widget _filterChip() {
+    return GestureDetector(
+      onTap: () {}, // Future filter action
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.filter_alt_outlined,
+                size: 14, color: Color(0xFF64748B)),
+            const SizedBox(width: 6),
+            const Text('This Month',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF64748B))),
+          ],
+        ),
       ),
     );
   }
@@ -339,14 +343,10 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
                   children: [
                     GestureDetector(
                       onTap: () => _changeMonth(-1),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primarySurface,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.chevron_left_rounded,
-                            size: 20, color: AppTheme.primary),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: Icon(Icons.chevron_left_rounded,
+                            size: 20, color: Color(0xFF64748B)),
                       ),
                     ),
                     Text(
@@ -358,14 +358,10 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
                     ),
                     GestureDetector(
                       onTap: () => _changeMonth(1),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primarySurface,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.chevron_right_rounded,
-                            size: 20, color: AppTheme.primary),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: Icon(Icons.chevron_right_rounded,
+                            size: 20, color: Color(0xFF64748B)),
                       ),
                     ),
                   ],
@@ -402,9 +398,9 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
                   children: [
                     _legendItem(AppTheme.success, 'Present'),
                     _legendItem(AppTheme.warning, 'Late'),
-                    _legendItem(const Color(0xFF8B5CF6), 'WFH'),
-                    _legendItem(AppTheme.info, 'On Leave'),
-                    _legendItem(const Color(0xFFE5E7EB), 'Holiday'),
+                    _legendItem(const Color(0xFF5C5CFF), 'WFH'),
+                    _legendItem(const Color(0xFFA855F7), 'On Leave'),
+                    _legendItem(const Color(0xFF1E3A8A), 'Holiday'),
                     _legendItem(AppTheme.danger, 'Absent'),
                   ],
                 ),
@@ -434,13 +430,13 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    _summaryBox('$present', 'Present', AppTheme.primary),
+                    _summaryBox('$present', 'Present', AppTheme.success),
                     const SizedBox(width: 10),
                     _summaryBox('$late', 'Late', AppTheme.warning),
                     const SizedBox(width: 10),
-                    _summaryBox('$wfhCount', 'WFH', const Color(0xFF8B5CF6)),
+                    _summaryBox('$wfhCount', 'WFH', const Color(0xFF5C5CFF)),
                     const SizedBox(width: 10),
-                    _summaryBox('$leaveCount', 'Leave', AppTheme.danger),
+                    _summaryBox('$leaveCount', 'Leave', const Color(0xFFA855F7)),
                   ],
                 ),
               ],
@@ -487,9 +483,8 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
           height: 36,
           decoration: isToday
               ? BoxDecoration(
-                  color: AppTheme.primary.withOpacity(0.1),
+                  color: const Color(0xFF5C5CFF),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppTheme.primary, width: 1.5),
                 )
               : null,
           child: Column(
@@ -500,8 +495,8 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
                       fontSize: 13,
                       fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
                       color:
-                          isToday ? AppTheme.primary : AppTheme.textPrimary)),
-              if (dotColor != null) ...[
+                          isToday ? Colors.white : AppTheme.textPrimary)),
+              if (dotColor != null && !isToday) ...[
                 const SizedBox(height: 2),
                 Container(
                   width: 5,
@@ -547,9 +542,8 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.06),
+          color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity(0.15)),
         ),
         child: Column(
           children: [
@@ -588,11 +582,13 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
       case 'late':
         return _StatusInfo('Late', AppTheme.warning);
       case 'wfh':
-        return _StatusInfo('WFH', const Color(0xFF8B5CF6));
+        return _StatusInfo('WFH', const Color(0xFF5C5CFF));
       case 'leave':
-        return _StatusInfo('On Leave', AppTheme.info);
+        return _StatusInfo('On Leave', const Color(0xFFA855F7));
+      case 'holiday':
+        return _StatusInfo('Holiday', const Color(0xFF1E3A8A));
       default:
-        return _StatusInfo('Absent', AppTheme.textHint);
+        return _StatusInfo('Absent', AppTheme.danger);
     }
   }
 }

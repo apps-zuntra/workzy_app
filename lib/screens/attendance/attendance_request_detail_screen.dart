@@ -88,7 +88,7 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
                 const SizedBox(height: 16),
                 _buildApprovalFlowCard(status, manager),
                 const SizedBox(height: 24),
-                if (isPending && isOwn) _buildActionButtons(context, data),
+                if (isPending) _buildActionButtons(context, data),
                 const SizedBox(height: 40),
               ],
             ),
@@ -111,7 +111,7 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
         statusLabel = 'Rejected';
         break;
       default:
-        statusColor = AppTheme.warning;
+        statusColor = const Color(0xFFD97706);
         statusLabel = 'Pending';
         break;
     }
@@ -119,9 +119,9 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppTheme.primarySurface,
+        color: const Color(0xFFF3F4FB),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.primary.withOpacity(0.1)),
+        border: Border.all(color: const Color(0xFFE0E7FF)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,7 +139,7 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: statusColor.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: statusColor.withOpacity(0.3)),
                 ),
@@ -168,16 +168,16 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.divider),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
       ),
       child: Column(
         children: [
           _infoRow('Submission Date', submittedAt != null ? DateFormat('dd MMM yyyy').format(submittedAt.toDate()) : 'N/A'),
-          const SizedBox(height: 16),
+          const Divider(height: 32, color: Color(0xFFF1F5F9)),
           _infoRow('Requested Date', requestedDate != null ? DateFormat('dd MMM yyyy').format(requestedDate.toDate()) : 'N/A'),
-          const SizedBox(height: 16),
+          const Divider(height: 32, color: Color(0xFFF1F5F9)),
           _infoRow('Reporting Manager', manager),
-          const SizedBox(height: 16),
+          const Divider(height: 32, color: Color(0xFFF1F5F9)),
           _infoRow('Last Updated', lastUpdated != null ? DateFormat('dd MMM yyyy').format(lastUpdated.toDate()) : 'N/A'),
         ],
       ),
@@ -208,17 +208,17 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.divider),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('REASON',
+          const Text('REASON',
               style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textMuted,
-                  letterSpacing: 0.5)),
+                  color: Color(0xFF64748B),
+                  letterSpacing: 1.0)),
           const SizedBox(height: 12),
           Text(reason,
               style: const TextStyle(
@@ -237,31 +237,31 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.divider),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('APPROVAL FLOW',
+          const Text('APPROVAL FLOW',
               style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: AppTheme.textMuted,
-                  letterSpacing: 0.5)),
+                  color: Color(0xFF64748B),
+                  letterSpacing: 1.0)),
           const SizedBox(height: 20),
           _buildTimelineNode(
             title: 'Manager Review',
             subtitle: manager,
             statusLabel: status == 'pending' ? 'Pending Manager Review' : (status == 'approved' ? 'Approved' : 'Rejected'),
             isLast: false,
-            nodeColor: status == 'pending' ? AppTheme.warning : (status == 'approved' ? AppTheme.success : AppTheme.danger),
+            nodeColor: status == 'pending' ? const Color(0xFFD97706) : (status == 'approved' ? AppTheme.success : AppTheme.danger),
           ),
           _buildTimelineNode(
             title: 'HR Approval',
             subtitle: 'HR Support Team',
             statusLabel: status == 'pending' ? 'Waiting for manager' : (status == 'approved' ? 'Auto-approved HR' : 'Waiting for manager'),
             isLast: true,
-            nodeColor: status == 'approved' ? AppTheme.textHint : AppTheme.textHint,
+            nodeColor: status == 'approved' ? AppTheme.success : const Color(0xFF94A3B8),
           ),
         ],
       ),
@@ -281,8 +281,9 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
         Column(
           children: [
             Container(
-              width: 10,
-              height: 10,
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.only(top: 4),
               decoration: BoxDecoration(
                 color: nodeColor,
                 shape: BoxShape.circle,
@@ -290,9 +291,9 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
             ),
             if (!isLast)
               Container(
-                width: 2,
+                width: 1.5,
                 height: 40,
-                color: AppTheme.divider,
+                color: const Color(0xFFE2E8F0),
                 margin: const EdgeInsets.symmetric(vertical: 4),
               ),
           ],
@@ -311,16 +312,16 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
                         color: AppTheme.textPrimary)),
                 const SizedBox(height: 2),
                 Text(subtitle,
-                    style: TextStyle(
+                    style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: AppTheme.textHint)),
+                        color: Color(0xFF94A3B8))),
                 const SizedBox(height: 2),
                 Text(statusLabel,
-                    style: TextStyle(
+                    style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w500,
-                        color: AppTheme.textMuted)),
+                        color: Color(0xFF94A3B8))),
               ],
             ),
           ),
@@ -347,8 +348,9 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
               );
             },
             style: OutlinedButton.styleFrom(
-              foregroundColor: AppTheme.primary,
-              side: BorderSide(color: AppTheme.primary.withOpacity(0.3)),
+              foregroundColor: const Color(0xFF5C5CFF),
+              backgroundColor: const Color(0xFFF5F7FF),
+              side: const BorderSide(color: Color(0xFFC7D2FE)),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
@@ -397,9 +399,9 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
               }
             },
             style: OutlinedButton.styleFrom(
-              foregroundColor: AppTheme.danger,
-              backgroundColor: AppTheme.danger.withOpacity(0.05),
-              side: BorderSide(color: AppTheme.danger.withOpacity(0.2)),
+              foregroundColor: const Color(0xFFDC2626),
+              backgroundColor: const Color(0xFFFEF2F2),
+              side: const BorderSide(color: Color(0xFFFECACA)),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
