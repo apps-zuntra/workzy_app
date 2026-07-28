@@ -56,7 +56,8 @@ class _CreateAnnouncementWizardState extends State<CreateAnnouncementWizard> {
     setState(() => _isPublishing = true);
 
     try {
-      final user = AppSession().userName ?? 'Admin';
+      final session = AppSession();
+      final user = session.userName ?? 'Admin';
       final department = _notifyAll ? 'all' : _selectedTeam;
 
       await FirestoreService.announcementsCol.add({
@@ -66,6 +67,8 @@ class _CreateAnnouncementWizardState extends State<CreateAnnouncementWizard> {
         'audience': department,
         'departmentId': department,
         'authorName': user,
+        'authorId': session.uid,
+        'authorEmail': session.email,
         'authorRole': 'admin',
         'timestamp': FieldValue.serverTimestamp(),
         'expiry': _expiryDate != null ? Timestamp.fromDate(_expiryDate!) : null,

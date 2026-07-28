@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +8,7 @@ import 'package:attendance_app/theme/app_theme.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:attendance_app/utils/app_session.dart';
 import 'package:attendance_app/utils/notification_helper.dart';
+import 'package:attendance_app/screens/employee/apply_leave_screen.dart';
 
 class UniversalLeaveTab extends StatefulWidget {
   const UniversalLeaveTab({super.key});
@@ -148,6 +149,7 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
           return Column(
             children: [
               _buildTopNavigation(),
+              const Divider(height: 1, color: Color(0xFFE5E7EB)),
               Expanded(
                 child: _buildSelectedTabContent(docs),
               ),
@@ -181,7 +183,16 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
   Widget _buildTopTab(String label, int index) {
     final isActive = _selectedTopTab == index;
     return GestureDetector(
-      onTap: () => setState(() => _selectedTopTab = index),
+      onTap: () {
+        if (index == 1) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const ApplyLeaveScreen()),
+          );
+        } else {
+          setState(() => _selectedTopTab = index);
+        }
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         decoration: BoxDecoration(
@@ -441,7 +452,10 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: () => setState(() => _selectedTopTab = 1),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const ApplyLeaveScreen()),
+                  ),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 20),
                     decoration: BoxDecoration(
@@ -539,215 +553,207 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
       child: FadeInUp(
         duration: const Duration(milliseconds: 400),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Leave Type *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-            const SizedBox(height: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: const Color(0xFFE5E7EB)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.01),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedLeaveType,
-                  isExpanded: true,
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF9CA3AF)),
-                  items: ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Loss of Pay'].map((String val) {
-                    return DropdownMenuItem<String>(
-                      value: val,
-                      child: Text(val, style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary, fontWeight: FontWeight.w500)),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => _selectedLeaveType = val);
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Start Date *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: () async {
-                          final date = await showDatePicker(
-                            context: context,
-                            initialDate: _fromDate,
-                            firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                            lastDate: DateTime.now().add(const Duration(days: 365)),
-                          );
-                          if (date != null) setState(() {
-                            _fromDate = date;
-                            if (_toDate.isBefore(_fromDate)) _toDate = _fromDate;
-                          });
-                        },
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Leave Type', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ['Annual Leave', 'Sick Leave', 'Casual Leave', 'Comp Off'].map((type) {
+                      final isSelected = _selectedLeaveType == type;
+                      return GestureDetector(
+                        onTap: () => setState(() => _selectedLeaveType = type),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                           decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                            color: isSelected ? const Color(0xFF5C5CFF) : const Color(0xFFF3F4F6),
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Text(DateFormat('MMM dd, yyyy').format(_fromDate), style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary)),
+                          child: Text(
+                            type,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                              color: isSelected ? Colors.white : const Color(0xFF4B5563),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('From', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
+                            const SizedBox(height: 8),
+                            GestureDetector(
+                              onTap: () async {
+                                final date = await showDatePicker(
+                                  context: context,
+                                  initialDate: _fromDate,
+                                  firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                                );
+                                if (date != null) {
+                                  setState(() {
+                                    _fromDate = date;
+                                    if (_toDate.isBefore(_fromDate)) _toDate = _fromDate;
+                                  });
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                                ),
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  DateFormat('dd-MM-yyyy').format(_fromDate),
+                                  style: const TextStyle(fontSize: 14, color: Color(0xFF1F2937)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('To', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
+                            const SizedBox(height: 8),
+                            GestureDetector(
+                              onTap: () async {
+                                final date = await showDatePicker(
+                                  context: context,
+                                  initialDate: _toDate,
+                                  firstDate: _fromDate,
+                                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                                );
+                                if (date != null) {
+                                  setState(() => _toDate = date);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                                ),
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  DateFormat('dd-MM-yyyy').format(_toDate),
+                                  style: const TextStyle(fontSize: 14, color: Color(0xFF1F2937)),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Reason', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                    ),
+                    child: TextField(
+                      controller: _reasonController,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        hintText: 'Brief reason...',
+                        hintStyle: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.all(16),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => setState(() => _selectedTopTab = 0),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('End Date *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-                      const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: () async {
-                          final date = await showDatePicker(
-                            context: context,
-                            initialDate: _toDate,
-                            firstDate: _fromDate,
-                            lastDate: DateTime.now().add(const Duration(days: 365)),
-                          );
-                          if (date != null) setState(() => _toDate = date);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE5E7EB)),
-                          ),
-                          child: Text(DateFormat('MMM dd, yyyy').format(_toDate), style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary)),
-                        ),
+                  child: ElevatedButton(
+                    onPressed: _isSubmitting ? null : _submitLeave,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF5C5CFF),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    ],
+                      elevation: 0,
+                    ),
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Submit',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 20),
-            const Text('Leave Duration', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _leaveDuration = 'Full Day'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(
-                        color: _leaveDuration == 'Full Day' ? AppTheme.primary.withOpacity(0.05) : const Color(0xFFF9FAFB),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _leaveDuration == 'Full Day' ? AppTheme.primary : const Color(0xFFE5E7EB)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _leaveDuration == 'Full Day' ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                            color: _leaveDuration == 'Full Day' ? AppTheme.primary : const Color(0xFFD1D5DB),
-                            size: 18,
-                          ),
-                          const SizedBox(width: 8),
-                          Text('Full Day', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _leaveDuration == 'Full Day' ? AppTheme.primary : const Color(0xFF6B7280))),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _leaveDuration = 'Half Day'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(
-                        color: _leaveDuration == 'Half Day' ? AppTheme.primary.withOpacity(0.05) : const Color(0xFFF9FAFB),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _leaveDuration == 'Half Day' ? AppTheme.primary : const Color(0xFFE5E7EB)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _leaveDuration == 'Half Day' ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                            color: _leaveDuration == 'Half Day' ? AppTheme.primary : const Color(0xFFD1D5DB),
-                            size: 18,
-                          ),
-                          const SizedBox(width: 8),
-                          Text('Half Day', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _leaveDuration == 'Half Day' ? AppTheme.primary : const Color(0xFF6B7280))),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            const Text('Reason *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-            const SizedBox(height: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              child: TextField(
-                controller: _reasonController,
-                maxLines: 4,
-                decoration: const InputDecoration(
-                  hintText: 'Briefly describe the reason for your leave...',
-                  hintStyle: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.all(16),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text('Attachment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF9FAFB),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              child: Column(
-                children: const [
-                  Icon(Icons.upload_file, color: Color(0xFF9CA3AF), size: 28),
-                  SizedBox(height: 12),
-                  Text('Upload document', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
-                  SizedBox(height: 4),
-                  Text('Medical certificate, PDF, Image', style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
-                ],
-              ),
-            ),
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton(
-                onPressed: _isSubmitting ? null : _submitLeave,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: _isSubmitting
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('Submit Leave Request', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
-              ),
             ),
             const SizedBox(height: 100),
           ],

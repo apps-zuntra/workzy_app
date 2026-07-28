@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -17,35 +17,54 @@ class ApplyLeaveScreen extends StatefulWidget {
 class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
   DateTime? fromDate;
   DateTime? toDate;
-  String selectedType = 'Sick Leave';
+  String selectedType = 'Annual Leave';
   final TextEditingController reasonController = TextEditingController();
   bool isLoading = false;
 
-  final List<String> leaveTypes = ['Sick Leave', 'Casual Leave', 'Paid Leave', 'Unpaid Leave'];
+  final List<String> leaveTypes = [
+    'Annual Leave',
+    'Sick Leave',
+    'Casual Leave',
+    'Comp Off'
+  ];
 
   Future<void> _pickDate(BuildContext context, bool isFrom) async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
+      initialDate: isFrom
+          ? (fromDate ?? DateTime.now())
+          : (toDate ?? fromDate ?? DateTime.now()),
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
       builder: (context, child) {
         return Theme(
           data: ThemeData.light().copyWith(
-            colorScheme: ColorScheme.light(primary: AppTheme.primary),
+            colorScheme: const ColorScheme.light(primary: Color(0xFF5C5CFF)),
           ),
           child: child!,
         );
       },
     );
     if (picked != null) {
-      setState(() => isFrom ? fromDate = picked : toDate = picked);
+      setState(() {
+        if (isFrom) {
+          fromDate = picked;
+          if (toDate != null && toDate!.isBefore(fromDate!)) {
+            toDate = fromDate;
+          }
+        } else {
+          toDate = picked;
+        }
+      });
     }
   }
 
   Future<void> _submit() async {
-    if (fromDate == null || toDate == null || reasonController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
+    if (fromDate == null ||
+        toDate == null ||
+        reasonController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please fill all fields')));
       return;
     }
 
@@ -56,15 +75,18 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
           .where('email', isEqualTo: user?.email ?? '')
           .limit(1)
           .get();
-      final userData = userQuery.docs.isNotEmpty ? userQuery.docs.first.data() : {};
-      final userName = userData['name'] ?? user?.email?.split('@')[0] ?? 'Employee';
+      final userData =
+          userQuery.docs.isNotEmpty ? userQuery.docs.first.data() : {};
+      final userName =
+          userData['name'] ?? user?.email?.split('@')[0] ?? 'Employee';
       final department = userData['department'] ?? 'General';
       final diff = toDate!.difference(fromDate!).inDays + 1;
-      final senderRole = (userData['role'] as String?)?.toLowerCase() ?? 'employee';
+      final senderRole =
+          (userData['role'] as String?)?.toLowerCase() ?? 'employee';
 
       await FirestoreService.userLeaveRequestsCol(user!.email ?? '').add({
         'companyId': FirestoreService.companyId,
-        'userId': user!.uid,
+        'userId': user.uid,
         'userEmail': user.email,
         'userName': userName,
         'department': department,
@@ -78,33 +100,53 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
         'senderRole': senderRole,
       });
 
-      // 2. Notify the manager and/or admin based on role
+      // Notify the manager and/or admin based on role
       final dateRangeStr = diff == 1
           ? 'on ${DateFormat('MMM dd, yyyy').format(fromDate!)}'
           : 'from ${DateFormat('MMM dd').format(fromDate!)} to ${DateFormat('MMM dd').format(toDate!)} ($diff days)';
-      final title = 'New Leave Request ðŸ“';
+      final title = 'New Leave Request 📝';
       final body = '$userName applied for $selectedType $dateRangeStr.';
       final extraData = {'employeeEmail': user.email};
 
       if (senderRole == 'admin') {
-        await NotificationHelper.notifyAdmin(title: title, body: body, type: 'new_leave_request', extraData: extraData);
+        await NotificationHelper.notifyAdmin(
+            title: title,
+            body: body,
+            type: 'new_leave_request',
+            extraData: extraData);
       } else if (senderRole == 'manager') {
-        await NotificationHelper.notifyAdmin(title: title, body: body, type: 'new_leave_request', extraData: extraData);
+        await NotificationHelper.notifyAdmin(
+            title: title,
+            body: body,
+            type: 'new_leave_request',
+            extraData: extraData);
       } else {
-        await NotificationHelper.notifyManager(title: title, body: body, type: 'new_leave_request', extraData: extraData);
-        await NotificationHelper.notifyAdmin(title: title, body: body, type: 'new_leave_request', extraData: extraData);
+        await NotificationHelper.notifyManager(
+            title: title,
+            body: body,
+            type: 'new_leave_request',
+            extraData: extraData);
+        await NotificationHelper.notifyAdmin(
+            title: title,
+            body: body,
+            type: 'new_leave_request',
+            extraData: extraData);
       }
 
       if (mounted) {
         Future.delayed(Duration.zero, () {
           if (mounted) {
             Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Request submitted successfully!'), backgroundColor: AppTheme.success));
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: const Text('Request submitted successfully!'),
+                backgroundColor: AppTheme.success));
           }
         });
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -112,128 +154,277 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Determine if fields are filled to change the Submit button style or state
+    final isFormValid = fromDate != null &&
+        toDate != null &&
+        reasonController.text.trim().isNotEmpty;
+
     return Scaffold(
-      backgroundColor: AppTheme.surface,
+      backgroundColor:
+          const Color(0xFFF5F7FA), // Soft grey background matching mock
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        centerTitle: true,
-        title: Text('Apply for Leave', style: AppTheme.h3),
+        centerTitle: false,
+        leadingWidth: 48,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: AppTheme.textPrimary, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: Color(0xFF4B5563), size: 16),
           onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Apply Leave',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF1F2937),
+          ),
+        ),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, color: Color(0xFFE5E7EB)),
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         child: FadeInUp(
-          duration: const Duration(milliseconds: 500),
+          duration: const Duration(milliseconds: 300),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildTypeSelector(),
-              const SizedBox(height: 24),
-              _buildDateSection(),
-              const SizedBox(height: 24),
-              _buildReasonField(),
-              const SizedBox(height: 40),
-              _buildSubmitButton(),
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.015),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Leave Type',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1F2937))),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 10,
+                      children: leaveTypes.map((type) {
+                        final isSelected = selectedType == type;
+                        return GestureDetector(
+                          onTap: () => setState(() => selectedType = type),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 18, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFF5C5CFF)
+                                  : const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: Text(
+                              type,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? Colors.white
+                                    : const Color(0xFF4B5563),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('From',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF1F2937))),
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: () => _pickDate(context, true),
+                                child: Container(
+                                  height: 50,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
+                                  width: double.infinity,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                        color: const Color(0xFFE5E7EB)),
+                                  ),
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    fromDate == null
+                                        ? ''
+                                        : DateFormat('dd-MM-yyyy')
+                                            .format(fromDate!),
+                                    style: const TextStyle(
+                                        fontSize: 14, color: Color(0xFF1F2937)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('To',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF1F2937))),
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: () => _pickDate(context, false),
+                                child: Container(
+                                  height: 50,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
+                                  width: double.infinity,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                        color: const Color(0xFFE5E7EB)),
+                                  ),
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    toDate == null
+                                        ? ''
+                                        : DateFormat('dd-MM-yyyy')
+                                            .format(toDate!),
+                                    style: const TextStyle(
+                                        fontSize: 14, color: Color(0xFF1F2937)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    const Text('Reason',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1F2937))),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: TextField(
+                        controller: reasonController,
+                        maxLines: 4,
+                        style: const TextStyle(
+                            fontSize: 14, color: Color(0xFF1F2937)),
+                        decoration: const InputDecoration(
+                          hintText: 'Brief reason...',
+                          hintStyle: TextStyle(
+                              color: Color(0xFF9CA3AF), fontSize: 13.5),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.all(16),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 52,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          backgroundColor:
+                              const Color.fromARGB(255, 185, 187, 190),
+                          foregroundColor:
+                              const Color.fromARGB(255, 120, 126, 139),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(26),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: SizedBox(
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: isLoading ? null : _submit,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF5C5CFF),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(26),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'Submit',
+                                style: TextStyle(
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 100),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildTypeSelector() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('LEAVE TYPE', style: AppTheme.label),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: AppTheme.cardDecoration(),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: selectedType,
-              isExpanded: true,
-              items: leaveTypes.map((t) => DropdownMenuItem(value: t, child: Text(t, style: AppTheme.bodyMedium))).toList(),
-              onChanged: (v) => setState(() => selectedType = v!),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDateSection() {
-    return Row(
-      children: [
-        Expanded(child: _datePickerWidget('START DATE', fromDate, () => _pickDate(context, true))),
-        const SizedBox(width: 16),
-        Expanded(child: _datePickerWidget('END DATE', toDate, () => _pickDate(context, false))),
-      ],
-    );
-  }
-
-  Widget _datePickerWidget(String label, DateTime? date, VoidCallback onTap) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: AppTheme.label),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            width: double.infinity,
-            decoration: AppTheme.cardDecoration(),
-            child: Row(
-              children: [
-                Icon(Icons.calendar_today_rounded, size: 16, color: AppTheme.primary),
-                const SizedBox(width: 8),
-                Text(date == null ? 'Select' : DateFormat('MMM dd, yyyy').format(date), style: AppTheme.bodySmall),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildReasonField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('REASON FOR LEAVE', style: AppTheme.label),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: AppTheme.cardDecoration(),
-          child: TextField(
-            controller: reasonController,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: 'Enter your reason here...',
-              border: InputBorder.none,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSubmitButton() {
-    return ElevatedButton(
-      onPressed: isLoading ? null : _submit,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        minimumSize: const Size(double.infinity, 56),
-        shape: RoundedRectangleBorder(borderRadius: AppTheme.buttonRadius),
-      ),
-      child: isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Submit Request'),
     );
   }
 }

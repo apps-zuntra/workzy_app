@@ -5,6 +5,7 @@ import 'package:attendance_app/theme/app_theme.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:attendance_app/screens/create_announcement_wizard.dart';
+import 'package:attendance_app/screens/announcement_detail_screen.dart';
 
 class AnnouncementsTabView extends StatefulWidget {
   final bool isAdmin;
@@ -78,6 +79,8 @@ class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
         'audience': audience,
         'departmentId': widget.departmentId,
         'authorName': user?.displayName ?? 'Admin',
+        'authorId': user?.uid,
+        'authorEmail': user?.email,
         'authorRole': widget.isAdmin ? 'admin' : 'manager',
         'timestamp': FieldValue.serverTimestamp(),
         'likes': 0,
@@ -190,8 +193,6 @@ class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
     final title = data['title'] ?? 'No Title';
     final message = data['message'] ?? '';
     final category = data['category'] ?? 'General';
-    final likes = data['likes'] ?? 0;
-    final commentsCount = data['commentsCount'] ?? 0;
     
     DateTime timestamp = (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now();
     String timeStr = _formatTimestamp(timestamp);
@@ -199,101 +200,176 @@ class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
     Color categoryBg = const Color(0xFFEEF2FF);
     Color categoryColor = const Color(0xFF5C5CFF);
     
-    if (category == 'Events') {
-      categoryBg = const Color(0xFFFAF5FF);
-      categoryColor = const Color(0xFFA855F7);
-    } else if (category == 'Policy' || category == 'HR') {
+    final lowerCat = category.toString().toLowerCase();
+    if (lowerCat == 'events') {
+      categoryBg = const Color(0xFFF5F3FF);
+      categoryColor = const Color(0xFF8B5CF6);
+    } else if (lowerCat == 'policy' || lowerCat == 'hr') {
       categoryBg = const Color(0xFFEFF6FF);
       categoryColor = const Color(0xFF3B82F6);
+    } else if (lowerCat == 'manager update') {
+      categoryBg = const Color(0xFFECFDF5);
+      categoryColor = const Color(0xFF10B981);
+    } else if (lowerCat == 'reminders' || lowerCat == 'task') {
+      categoryBg = const Color(0xFFF5F3FF);
+      categoryColor = const Color(0xFF7C3AED);
+    } else if (lowerCat == 'birthdays') {
+      categoryBg = const Color(0xFFFDF2F8);
+      categoryColor = const Color(0xFFDB2777);
+    } else if (lowerCat == 'new hires') {
+      categoryBg = const Color(0xFFFFF7ED);
+      categoryColor = const Color(0xFFEA580C);
+    } else {
+      categoryBg = const Color(0xFFF3F4F6);
+      categoryColor = const Color(0xFF4B5563);
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF3F4F6)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: categoryBg,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  category,
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: categoryColor),
-                ),
-              ),
-              Row(
-                children: [
-                  Text(timeStr, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.more_horiz, size: 16, color: Color(0xFF9CA3AF)),
-                ],
-              ),
-            ],
+    String? metadataText;
+    final expiryVal = data['expiry'];
+    DateTime? expiryDate;
+    if (expiryVal is Timestamp) {
+      expiryDate = expiryVal.toDate();
+    } else if (expiryVal is String) {
+      expiryDate = DateTime.tryParse(expiryVal);
+    }
+
+    if (lowerCat == 'policy') {
+      metadataText = expiryDate != null 
+          ? 'Effective: ${DateFormat('MMM d, yyyy').format(expiryDate)}'
+          : 'Effective: Immediate';
+    } else if (lowerCat == 'events') {
+      metadataText = expiryDate != null 
+          ? '${DateFormat('EEE, MMM d · hh:mm a').format(expiryDate)}'
+          : 'Upcoming Event';
+    } else if (lowerCat == 'task' || lowerCat == 'reminders') {
+      metadataText = expiryDate != null 
+          ? 'Due: ${DateFormat('EEE, MMM d, hh:mm a').format(expiryDate)}'
+          : 'Due: EOD';
+    } else if (lowerCat == 'manager update') {
+      metadataText = 'Published: ${DateFormat('MMM d, yyyy').format(timestamp)}';
+    } else {
+      metadataText = expiryDate != null
+          ? 'Date: ${DateFormat('MMM d, yyyy').format(expiryDate)}'
+          : 'Date: Immediate';
+    }
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AnnouncementDetailScreen(
+              reference: doc.reference,
+              initialData: data,
+            ),
           ),
-          const SizedBox(height: 12),
-          Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
-          const SizedBox(height: 6),
-          Text(
-            message,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, height: 1.5, color: Color(0xFF6B7280)),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.thumb_up_outlined, size: 14, color: Color(0xFF9CA3AF)),
-                  const SizedBox(width: 4),
-                  Text('$likes', style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
-                  const SizedBox(width: 16),
-                  const Icon(Icons.chat_bubble_outline, size: 14, color: Color(0xFF9CA3AF)),
-                  const SizedBox(width: 4),
-                  Text('$commentsCount', style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
-                ],
-              ),
-              if (widget.isAdmin || data['authorRole'] == 'manager')
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFF3F4F6)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: categoryBg,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    category,
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: categoryColor),
+                  ),
+                ),
                 Row(
                   children: [
-                    GestureDetector(
-                      onTap: () {}, // Edit not implemented
-                      child: Row(
-                        children: const [
-                          Icon(Icons.edit_outlined, size: 12, color: Color(0xFF5C5CFF)),
-                          SizedBox(width: 4),
-                          Text('Edit', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF5C5CFF))),
+                    Text(timeStr, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                    const SizedBox(width: 8),
+                    if (widget.isAdmin || data['authorRole'] == 'manager')
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_horiz, size: 16, color: Color(0xFF9CA3AF)),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onSelected: (value) {
+                          if (value == 'delete') {
+                            _deleteAnnouncement(doc.reference);
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                                SizedBox(width: 8),
+                                Text('Delete', style: TextStyle(color: Colors.red, fontSize: 13)),
+                              ],
+                            ),
+                          ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    GestureDetector(
-                      onTap: () => _deleteAnnouncement(doc.reference),
-                      child: Row(
-                        children: const [
-                          Icon(Icons.delete_outline, size: 12, color: Color(0xFFEF4444)),
-                          SizedBox(width: 4),
-                          Text('Delete', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFEF4444))),
-                        ],
-                      ),
-                    ),
+                      )
+                    else
+                      const Icon(Icons.more_horiz, size: 16, color: Color(0xFF9CA3AF)),
                   ],
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2937))),
+            if (metadataText != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                metadataText,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF5C5CFF)),
+              ),
             ],
-          ),
-        ],
+            const SizedBox(height: 6),
+            Text(
+              message,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, height: 1.5, color: Color(0xFF6B7280)),
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: Color(0xFFF3F4F6)),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Text(
+                  'View Details',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF5C5CFF),
+                  ),
+                ),
+                SizedBox(width: 4),
+                Icon(
+                  Icons.chevron_right,
+                  size: 14,
+                  color: Color(0xFF5C5CFF),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -10,6 +10,7 @@ import 'package:attendance_app/utils/app_session.dart';
 import 'package:attendance_app/utils/notification_helper.dart';
 import 'package:attendance_app/screens/profile_screen.dart';
 import 'package:attendance_app/screens/auth_wrapper.dart';
+import 'package:attendance_app/screens/employee/apply_leave_screen.dart';
 
 class AdminLeaveScreen extends StatefulWidget {
   const AdminLeaveScreen({super.key});
@@ -76,14 +77,17 @@ class _AdminLeaveScreenState extends State<AdminLeaveScreen> {
           children: [
             _buildHeader(),
             Expanded(
-              child: _isApplyingLeave
-                  ? _buildApplyLeaveScreen()
-                  : (_selectedTab == 0
-                      ? _MySpaceLeaveTab(
-                          userEmail: user?.email ?? '',
-                          onApplyLeave: () => setState(() => _isApplyingLeave = true),
-                        )
-                      : const _TeamLeaveTab()),
+              child: _selectedTab == 0
+                  ? _MySpaceLeaveTab(
+                      userEmail: user?.email ?? '',
+                      onApplyLeave: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const ApplyLeaveScreen()),
+                        );
+                      },
+                    )
+                  : const _TeamLeaveTab(),
             ),
           ],
         ),
@@ -261,21 +265,6 @@ class _AdminLeaveScreenState extends State<AdminLeaveScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          if (_isApplyingLeave)
-            GestureDetector(
-              onTap: () => setState(() => _isApplyingLeave = false),
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Row(
-                  children: [
-                    const Icon(Icons.arrow_back_ios_new, size: 14, color: Color(0xFF1F2937)),
-                    const SizedBox(width: 8),
-                    const Text('Apply Leave', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF1F2937))),
-                  ],
-                ),
-              ),
-            )
-          else
             _buildTabSwitcher(),
           const SizedBox(height: 4),
         ],

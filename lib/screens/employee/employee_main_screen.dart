@@ -5,6 +5,7 @@ import 'package:attendance_app/screens/attendance/attendance_screen.dart';
 import 'package:attendance_app/features/leave_management/screens/shared/universal_leave_tab.dart';
 import 'package:attendance_app/screens/employee/employee_attendance_correction_screen.dart';
 import 'package:attendance_app/screens/more/universal_more_tab.dart';
+import 'package:attendance_app/screens/employee/apply_leave_screen.dart';
 
 class EmployeeMainScreen extends StatefulWidget {
   const EmployeeMainScreen({super.key});
@@ -40,8 +41,8 @@ class _EmployeeMainScreenState extends State<EmployeeMainScreen> {
       // Quick Check-In -> Switch to Attendance tab
       setState(() => _currentIndex = 1);
     } else if (actionId == 1) {
-      // Apply Leave -> Switch to Leave tab
-      setState(() => _currentIndex = 2);
+      // Apply Leave -> Navigate to dedicated apply leave screen
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const ApplyLeaveScreen()));
     } else if (actionId == 2) {
       // Raise Correction -> Navigate to correction screen
       Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployeeAttendanceCorrectionScreen()));
