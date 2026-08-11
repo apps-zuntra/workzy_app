@@ -1,6 +1,7 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
+import 'package:attendance_app/utils/app_session.dart';
 import 'package:attendance_app/screens/employee_tasks_detail_screen.dart';
 
 class TeamTasksView extends StatefulWidget {
@@ -198,15 +199,18 @@ class _TeamTasksViewState extends State<TeamTasksView> {
             }
 
             final allUsers = usersSnapshot.data?.docs ?? [];
+            final myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
 
             final filteredUsers = allUsers.where((doc) {
               final data = doc.data() as Map<String, dynamic>;
               final name = (data['name'] ?? '').toString().toLowerCase();
-              final department = data['department'] ?? 'Unknown';
+              final department = (data['department'] ?? 'Unknown').toString();
               
               bool matchesSearch = name.contains(_searchQuery.toLowerCase()) || 
-                                   department.toString().toLowerCase().contains(_searchQuery.toLowerCase());
-              bool matchesDept = _selectedDepartment == 'All' || department == _selectedDepartment;
+                                   department.toLowerCase().contains(_searchQuery.toLowerCase());
+              bool matchesDept = _selectedDepartment == 'All'
+                  ? (myDept.isEmpty || AppSession().isSuperAdmin || department.toLowerCase() == myDept)
+                  : department == _selectedDepartment;
               
               return matchesSearch && matchesDept;
             }).toList();

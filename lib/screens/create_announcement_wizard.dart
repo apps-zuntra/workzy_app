@@ -40,7 +40,10 @@ class _CreateAnnouncementWizardState extends State<CreateAnnouncementWizard> {
     'Manager Update',
     'Policy',
     'Events',
-    'Reminders'
+    'Reminders',
+    'HR',
+    'Birthdays',
+    'New Hires'
   ];
 
   final List<String> _teams = [
@@ -84,9 +87,11 @@ class _CreateAnnouncementWizardState extends State<CreateAnnouncementWizard> {
           .where((e) => e.isNotEmpty)
           .toList();
 
-      await FirestoreService.announcementsCol.add({
+      final announcementData = {
+        'companyId': FirestoreService.companyId,
         'title': _titleController.text.trim(),
         'message': _messageController.text.trim(),
+        'content': _messageController.text.trim(),
         'category': _selectedCategory,
         'audience': audience,
         'departmentId': targetTeams.isNotEmpty ? targetTeams.first : 'all',
@@ -96,13 +101,20 @@ class _CreateAnnouncementWizardState extends State<CreateAnnouncementWizard> {
         'authorEmail': session.email,
         'authorRole': session.role ?? 'employee',
         'timestamp': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
         'expiry': _expiryDate != null ? Timestamp.fromDate(_expiryDate!) : null,
         'notifyOthers': _othersController.text.trim(),
         'targetEmails': otherEmails,
         'likes': 0,
         'commentsCount': 0,
         'status': 'published',
-      });
+      };
+
+      if (audience == 'all') {
+        await FirestoreService.announcementsCol.add(announcementData);
+      } else {
+        await FirestoreService.teamAnnouncementsCol.add(announcementData);
+      }
 
       if (mounted) {
         setState(() {

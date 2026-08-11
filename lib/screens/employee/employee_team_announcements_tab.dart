@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
@@ -83,31 +83,43 @@ class _EmployeeTeamAnnouncementsTabState
   }
 
   Widget _buildAnnouncementsList() {
-    // If we can't get departmentId easily from AppSession, we will just query for 'team' audience.
-    // In a full implementation, you'd add departmentId to AppSession and filter by it.
-    Query query = FirestoreService.announcementsCol
-        .where('audience', isEqualTo: 'team')
-        .where('status', isEqualTo: 'published')
-        .orderBy('timestamp', descending: true);
-        
     return StreamBuilder<QuerySnapshot>(
-      stream: query.snapshots() as Stream<QuerySnapshot<Object?>>,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(40),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (snapshot.hasError) {
-          return Padding(
-            padding: const EdgeInsets.all(40),
-            child: Center(child: Text('Error: ${snapshot.error}')),
-          );
-        }
+      stream: FirestoreService.teamAnnouncementsCol.snapshots(),
+      builder: (context, snap1) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirestoreService.announcementsCol.snapshots(),
+          builder: (context, snap2) {
+            if (snap1.connectionState == ConnectionState.waiting &&
+                snap2.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.all(40),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
 
-        final docs = snapshot.data?.docs ?? [];
-        
+            final Map<String, DocumentSnapshot> combined = {};
+            for (var d in (snap1.data?.docs ?? [])) combined[d.id] = d;
+            for (var d in (snap2.data?.docs ?? [])) combined[d.id] = d;
+
+            final rawDocs = combined.values.toList();
+            final myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
+            final myEmail = (AppSession().email ?? '').toString().trim().toLowerCase();
+
+            final docs = rawDocs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final aud = (data['audience'] ?? '').toString().toLowerCase();
+              final deptId = (data['departmentId'] ?? '').toString().toLowerCase();
+              final List targetTeams = (data['targetTeams'] as List?)?.map((t) => t.toString().toLowerCase()).toList() ?? [];
+              final List targetEmails = (data['targetEmails'] as List?)?.map((e) => e.toString().toLowerCase()).toList() ?? [];
+              final notifyOthersStr = (data['notifyOthers'] ?? '').toString().toLowerCase();
+
+              if (AppSession().isSuperAdmin) return true;
+              if (aud == 'all' || aud.isEmpty) return true;
+              if (myDept.isNotEmpty && (deptId == myDept || targetTeams.contains(myDept) || aud.contains(myDept))) return true;
+              if (myEmail.isNotEmpty && (targetEmails.contains(myEmail) || notifyOthersStr.contains(myEmail))) return true;
+              return false;
+            }).toList();
+
         List<DocumentSnapshot> filteredDocs = docs;
         if (_selectedFilter != 0) { // 0 is 'All'
           final filterText = _filters[_selectedFilter].toLowerCase();

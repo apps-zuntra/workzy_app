@@ -1,4 +1,8 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import 'package:attendance_app/utils/app_session.dart';
+import 'package:attendance_app/utils/firestore_service.dart';
 
 class EmployeeFeedTab extends StatefulWidget {
   const EmployeeFeedTab({super.key});
@@ -10,52 +14,54 @@ class EmployeeFeedTab extends StatefulWidget {
 class _EmployeeFeedTabState extends State<EmployeeFeedTab> {
   final TextEditingController _messageController = TextEditingController();
 
-  final List<Map<String, dynamic>> _messages = [
-    {
-      'sender': 'Rahul Mehta',
-      'initials': 'RM',
-      'color': const Color(0xFF5C5CFF),
-      'time': '09:00',
-      'text':
-          'Good morning team. Wireframe review is the priority today. Please send updated files by 4 PM.',
-      'isMe': false,
-    },
-    {
-      'sender': 'Me',
-      'initials': '',
-      'color': const Color(0xFF5C5CFF),
-      'time': '09:05',
-      'text': 'Understood. I will share the updated Figma by 4 PM.',
-      'isMe': true,
-      'read': true,
-    },
-    {
-      'sender': 'Emma Wilson',
-      'initials': 'EW',
-      'color': const Color(0xFFF59E0B),
-      'time': '09:12',
-      'text':
-          'I will cover the component library section. Will update by 3 PM.',
-      'isMe': false,
-    },
-    {
-      'sender': 'Raj Patel',
-      'initials': 'RP',
-      'color': const Color(0xFF10B981),
-      'time': '09:30',
-      'text':
-          'Mobile flow v3 is ready for review. Sharing the Figma link in the design channel now.',
-      'isMe': false,
-    },
-    {
-      'sender': 'Olivia Smith',
-      'initials': 'OS',
-      'color': const Color(0xFF3B82F6),
-      'time': '10:15',
-      'text': 'Working from home today. Available on call anytime.',
-      'isMe': false,
-    },
-  ];
+  String _getInitials(String name) {
+    if (name.isEmpty) return '??';
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.length == 1) return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  Color _getAvatarColor(String name) {
+    final colors = [
+      const Color(0xFF5C5CFF),
+      const Color(0xFFF59E0B),
+      const Color(0xFF10B981),
+      const Color(0xFF3B82F6),
+      const Color(0xFFEC4899),
+      const Color(0xFF8B5CF6),
+    ];
+    int hash = name.hashCode.abs();
+    return colors[hash % colors.length];
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+
+    final userName = AppSession().userName ?? 'Employee';
+    final userEmail = AppSession().email ?? '';
+
+    _messageController.clear();
+
+    final postMap = {
+      'companyId': FirestoreService.companyId,
+      'author': userName,
+      'authorEmail': userEmail,
+      'color': '#5C5CFF',
+      'comments': [],
+      'reactions': [],
+      'createdAt': DateTime.now().millisecondsSinceEpoch,
+      'name': userName,
+      'userEmail': userEmail,
+      'department': AppSession().userDepartment ?? '',
+      'text': text,
+      'content': text,
+      'timestamp': FieldValue.serverTimestamp(),
+      'likes': 0,
+    };
+
+    await FirestoreService.teamFeedCol.add(postMap);
+  }
 
   @override
   void dispose() {
@@ -65,6 +71,9 @@ class _EmployeeFeedTabState extends State<EmployeeFeedTab> {
 
   @override
   Widget build(BuildContext context) {
+    final myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
+    final myEmail = (AppSession().email ?? '').toString().trim().toLowerCase();
+
     return Column(
       children: [
         _buildHeader(),
@@ -72,29 +81,81 @@ class _EmployeeFeedTabState extends State<EmployeeFeedTab> {
         Expanded(
           child: Container(
             color: const Color(0xFFF9FAFB),
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              children: [
-                Center(
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE5E7EB))),
-                    child: const Text(
-                      'Monday, 28 July 2026',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF6B7280),
-                          fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                ..._messages.map((msg) => _buildMessageBubble(msg)),
-              ],
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirestoreService.teamFeedCol.snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final rawDocs = snapshot.data?.docs ?? [];
+                final filteredDocs = rawDocs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final dept = (data['department'] ?? '').toString().trim().toLowerCase();
+                  if (myDept.isEmpty || AppSession().isSuperAdmin) return true;
+                  return dept == myDept || dept.isEmpty;
+                }).toList();
+
+                if (filteredDocs.isEmpty) {
+                  return ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFE5E7EB))),
+                          child: Text(
+                            DateFormat('EEEE, d MMMM yyyy').format(DateTime.now()),
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF6B7280),
+                                fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 40),
+                      const Center(
+                        child: Text(
+                          'No messages in team feed yet. Start the conversation!',
+                          style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                      itemCount: filteredDocs.length,
+                      itemBuilder: (context, index) {
+                        final data = filteredDocs[index].data() as Map<String, dynamic>;
+                        final senderEmail = (data['authorEmail'] ?? data['userEmail'] ?? '').toString().trim().toLowerCase();
+                        final isMe = (senderEmail == myEmail);
+                        final senderName = data['author'] ?? data['name'] ?? (isMe ? 'Me' : 'Colleague');
+                        final text = data['content'] ?? data['text'] ?? '';
+                        final ts = data['timestamp'] as Timestamp?;
+                        final time = ts != null
+                            ? DateFormat('hh:mm a').format(ts.toDate())
+                            : 'Now';
+
+                        final initials = _getInitials(senderName);
+                        final color = _getAvatarColor(senderName);
+
+                        return _buildMessageBubble({
+                          'sender': senderName,
+                          'initials': initials,
+                          'color': color,
+                          'time': time,
+                          'text': text,
+                          'isMe': isMe,
+                          'read': true,
+                        });
+                      },
+                );
+              },
             ),
           ),
         ),
@@ -126,9 +187,9 @@ class _EmployeeFeedTabState extends State<EmployeeFeedTab> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Design Team',
-                style: TextStyle(
+              Text(
+                '${AppSession().userDepartment ?? 'Team'} Feed',
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF111827),
@@ -307,6 +368,7 @@ class _EmployeeFeedTabState extends State<EmployeeFeedTab> {
                   Expanded(
                     child: TextField(
                       controller: _messageController,
+                      onSubmitted: (_) => _sendMessage(),
                       decoration: const InputDecoration(
                         hintText: 'Type a message...',
                         hintStyle: TextStyle(
@@ -333,13 +395,13 @@ class _EmployeeFeedTabState extends State<EmployeeFeedTab> {
             width: 44,
             height: 44,
             decoration: const BoxDecoration(
-              color: Color(0xFFF3F4F6),
+              color: Color(0xFFEEF2FF),
               shape: BoxShape.circle,
             ),
             child: IconButton(
               icon: const Icon(Icons.send_rounded,
-                  color: Color(0xFF9CA3AF), size: 20),
-              onPressed: () {},
+                  color: Color(0xFF5C5CFF), size: 20),
+              onPressed: _sendMessage,
             ),
           ),
         ],

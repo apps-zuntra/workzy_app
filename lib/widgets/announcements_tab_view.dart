@@ -11,12 +11,16 @@ class AnnouncementsTabView extends StatefulWidget {
   final bool isAdmin;
   final String? departmentId;
   final VoidCallback? onCreateAnnouncement;
+  final bool isTeamAnnouncements; // true = team_announcements only, false = org announcements only
+  final bool showBoth; // true = show both org and team announcements (for My Space)
 
   const AnnouncementsTabView({
     super.key,
     required this.isAdmin,
     this.departmentId,
     this.onCreateAnnouncement,
+    this.isTeamAnnouncements = false,
+    this.showBoth = false,
   });
 
   @override
@@ -40,10 +44,11 @@ class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
   @override
   void initState() {
     super.initState();
-    _announcementsStream = FirestoreService.announcementsCol
-        .where('status', isEqualTo: 'published')
-        .orderBy('timestamp', descending: true)
-        .snapshots();
+    // Team announcements tab → team_announcements collection only
+    // Org announcements tab → announcements collection (company-wide) only
+    _announcementsStream = widget.isTeamAnnouncements
+        ? FirestoreService.teamAnnouncementsCol.snapshots()
+        : FirestoreService.announcementsCol.snapshots();
   }
 
   @override
@@ -591,55 +596,76 @@ class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
         _buildCategoryTabs(),
         const Divider(height: 1, color: Color(0xFFE5E7EB)),
         Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: _announcementsStream,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-              if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
-
-              final allDocs = snapshot.data?.docs ?? [];
-              
-              List<DocumentSnapshot> filteredDocs = allDocs.where((doc) {
-                final data = doc.data() as Map<String, dynamic>? ?? {};
-                
-                // Audience filtering locally to avoid composite index requirements initially
-                if (!widget.isAdmin) {
-                  final aud = data['audience'] ?? 'all';
-                  // Managers can see 'all', 'managers', 'admins', or their own 'team'
-                  if (aud != 'all' && aud != 'managers' && aud != 'admins' && aud != 'team') {
-                     return false;
-                  }
-                  if (aud == 'team' && data['departmentId'] != widget.departmentId) {
-                     return false;
-                  }
-                }
-
-                // Category filtering
-                String cat = data['category'] ?? 'General';
-                if (_selectedCategoryTab == 1) return cat == 'HR';
-                if (_selectedCategoryTab == 2) return cat == 'Policy';
-                if (_selectedCategoryTab == 3) return cat == 'Events';
-                if (_selectedCategoryTab == 4) return cat == 'Manager Update';
-                if (_selectedCategoryTab == 5) return cat == 'Birthdays';
-                if (_selectedCategoryTab == 6) return cat == 'New Hires';
-                return true; // 0 is All
-              }).toList();
-
-              if (filteredDocs.isEmpty) {
-                return const Center(child: Text('No announcements found', style: TextStyle(color: Colors.grey)));
-              }
-
-              return ListView.builder(
-                padding: const EdgeInsets.all(20),
-                itemCount: filteredDocs.length,
-                itemBuilder: (context, index) {
-                  return _buildAnnouncementCard(filteredDocs[index]);
-                },
-              );
-            },
-          ),
+          child: widget.showBoth
+              ? StreamBuilder<QuerySnapshot>(
+                  stream: FirestoreService.announcementsCol.snapshots(),
+                  builder: (context, orgSnap) {
+                    return StreamBuilder<QuerySnapshot>(
+                      stream: FirestoreService.teamAnnouncementsCol.snapshots(),
+                      builder: (context, teamSnap) {
+                        if (orgSnap.connectionState == ConnectionState.waiting &&
+                            teamSnap.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        final Map<String, DocumentSnapshot> combined = {};
+                        for (var d in (orgSnap.data?.docs ?? [])) combined[d.id] = d;
+                        for (var d in (teamSnap.data?.docs ?? [])) combined[d.id] = d;
+                        final allDocs = combined.values.toList();
+                        return _buildList(allDocs);
+                      },
+                    );
+                  },
+                )
+              : StreamBuilder<QuerySnapshot>(
+                  stream: _announcementsStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                    if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
+                    final allDocs = snapshot.data?.docs ?? [];
+                    return _buildList(allDocs);
+                  },
+                ),
         ),
       ],
+    );
+  }
+
+  Widget _buildList(List<DocumentSnapshot> allDocs) {
+    List<DocumentSnapshot> filteredDocs = allDocs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>? ?? {};
+
+      // Audience filtering
+      if (!widget.isAdmin) {
+        final aud = data['audience'] ?? 'all';
+        if (aud != 'all' && aud != 'managers' && aud != 'admins' && aud != 'team') {
+          return false;
+        }
+        if (aud == 'team' && data['departmentId'] != widget.departmentId) {
+          return false;
+        }
+      }
+
+      // Category filtering
+      final String cat = data['category'] ?? 'General';
+      if (_selectedCategoryTab == 1) return cat == 'HR';
+      if (_selectedCategoryTab == 2) return cat == 'Policy';
+      if (_selectedCategoryTab == 3) return cat == 'Events';
+      if (_selectedCategoryTab == 4) return cat == 'Manager Update';
+      if (_selectedCategoryTab == 5) return cat == 'Birthdays';
+      if (_selectedCategoryTab == 6) return cat == 'New Hires';
+      return true; // 0 is All
+    }).toList();
+
+    if (filteredDocs.isEmpty) {
+      return const Center(child: Text('No announcements found', style: TextStyle(color: Colors.grey)));
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(20),
+      itemCount: filteredDocs.length,
+      itemBuilder: (context, index) {
+        return _buildAnnouncementCard(filteredDocs[index]);
+      },
     );
   }
 }

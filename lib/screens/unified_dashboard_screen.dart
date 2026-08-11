@@ -623,6 +623,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                                   : (_selectedSubTab == 3
                                       ? AnnouncementsTabView(
                                           isAdmin: true,
+                                          showBoth: true,
                                           onCreateAnnouncement: () => setState(() => _isCreatingAnnouncement = true),
                                         )
                                       : (_selectedSubTab == 4
@@ -640,6 +641,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                                   : (_selectedSubTab == 2
                                       ? AnnouncementsTabView(
                                           isAdmin: true,
+                                          isTeamAnnouncements: true,
                                           onCreateAnnouncement: () => setState(() => _isCreatingAnnouncement = true),
                                         )
                                       : (_selectedSubTab == 3
@@ -657,6 +659,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                                       : (_selectedSubTab == 2
                                           ? AnnouncementsTabView(
                                               isAdmin: true,
+                                              isTeamAnnouncements: false,
                                               onCreateAnnouncement: () => setState(() => _isCreatingAnnouncement = true),
                                             )
                                           : (_selectedSubTab == 3
@@ -3405,3 +3408,4 @@ class _AdminApprovalReviewScreenState extends State<_AdminApprovalReviewScreen> 
     );
   }
 }
+

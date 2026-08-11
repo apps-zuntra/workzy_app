@@ -16,6 +16,8 @@ class AppSession {
   String? companyId;
   String? companyName;
   String? userName;
+  String? department;
+  String? get userDepartment => department;
 
   // â”€â”€ Company Office Location (fetched from organizations doc) â”€â”€â”€â”€â”€â”€â”€â”€â”€
   double? officeLat;
@@ -95,6 +97,7 @@ class AppSession {
     required String companyId,
     String? companyName,
     String? userName,
+    String? department,
     double? officeLat,
     double? officeLng,
     double? allowedRadius,
@@ -110,6 +113,7 @@ class AppSession {
     this.companyId = companyId;
     this.companyName = companyName;
     this.userName = userName;
+    this.department = department;
     this.officeLat = officeLat;
     this.officeLng = officeLng;
     if (allowedRadius != null) this.allowedRadius = allowedRadius;

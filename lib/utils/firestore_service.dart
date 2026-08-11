@@ -209,6 +209,10 @@ class FirestoreService {
   static CollectionReference<Map<String, dynamic>> get announcementsCol =>
       orgDoc(_cid).collection('announcements');
 
+  /// `/organizations/{companyId}/team_announcements`
+  static CollectionReference<Map<String, dynamic>> get teamAnnouncementsCol =>
+      orgDoc(_cid).collection('team_announcements');
+
   /// `/organizations/{companyId}/company_calendar`
   static CollectionReference<Map<String, dynamic>> get companyCalendarCol =>
       companyDoc().collection('company_calendar');
@@ -220,6 +224,10 @@ class FirestoreService {
   /// `/organizations/{companyId}/feed_posts`
   static CollectionReference<Map<String, dynamic>> get feedPostsCol =>
       companyDoc().collection('feed_posts');
+
+  /// `/organizations/{companyId}/team_feed`
+  static CollectionReference<Map<String, dynamic>> get teamFeedCol =>
+      companyDoc().collection('team_feed');
 
   // â”€â”€ Legacy / Flat Collections (To be removed after migration) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

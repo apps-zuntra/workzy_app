@@ -288,6 +288,138 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
     );
   }
 
+  void _showCommentsBottomSheet(BuildContext context) {
+    final TextEditingController commentController = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.7,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Announcement Comments',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
+                ),
+              ),
+              const Divider(height: 1, color: Color(0xFFF3F4F6)),
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: widget.reference.collection('comments').orderBy('timestamp', descending: false).snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final commentsDocs = snapshot.data?.docs ?? [];
+                    if (commentsDocs.isEmpty) {
+                      return const Center(
+                        child: Text('No comments yet. Leave a comment below!', style: TextStyle(color: Color(0xFF9CA3AF))),
+                      );
+                    }
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: commentsDocs.length,
+                      itemBuilder: (context, index) {
+                        final cData = commentsDocs[index].data() as Map<String, dynamic>;
+                        final cName = cData['userName'] ?? 'User';
+                        final cText = cData['text'] ?? '';
+                        final ts = cData['timestamp'] as Timestamp?;
+                        final cTime = ts != null ? DateFormat('hh:mm a').format(ts.toDate()) : 'Now';
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF9FAFB),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(cName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1F2937))),
+                                  Text(cTime, style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(cText, style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563))),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: Color(0xFFF3F4F6))),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: commentController,
+                        decoration: const InputDecoration(
+                          hintText: 'Write a comment...',
+                          hintStyle: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+                          border: InputBorder.none,
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.send_rounded, color: Color(0xFF5C5CFF), size: 20),
+                      onPressed: () async {
+                        final text = commentController.text.trim();
+                        if (text.isEmpty) return;
+                        commentController.clear();
+                        await widget.reference.collection('comments').add({
+                          'userName': AppSession().userName ?? 'User',
+                          'userEmail': AppSession().email ?? '',
+                          'text': text,
+                          'timestamp': FieldValue.serverTimestamp(),
+                        });
+                        await widget.reference.update({
+                          'comments': FieldValue.increment(1),
+                          'commentsCount': FieldValue.increment(1),
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
@@ -608,10 +740,85 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                         _buildMetaRow('Publish Status', status[0].toUpperCase() + status.substring(1)),
                         const Divider(color: Color(0xFFF3F4F6), height: 24),
                         _buildMetaRow('Expiry Date', expiryDate != null ? DateFormat('MMM d, yyyy').format(expiryDate) : 'No Expiry'),
-                        const Divider(color: Color(0xFFF3F4F6), height: 24),
-                        _buildMetaRow('Total Likes', '$likes'),
-                        const Divider(color: Color(0xFFF3F4F6), height: 24),
-                        _buildMetaRow('Comments Count', '$commentsCount'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Action Row (Star & Comments)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        GestureDetector(
+                          onTap: () async {
+                            final myEmail = AppSession().email ?? '';
+                            if (myEmail.isEmpty) return;
+                            final List likedBy = List.from(data['likedBy'] is List ? data['likedBy'] : []);
+                            final isLiked = likedBy.contains(myEmail);
+                            if (isLiked) {
+                              likedBy.remove(myEmail);
+                              await widget.reference.update({
+                                'likes': FieldValue.increment(-1),
+                                'likedBy': likedBy,
+                              });
+                            } else {
+                              likedBy.add(myEmail);
+                              await widget.reference.update({
+                                'likes': FieldValue.increment(1),
+                                'likedBy': likedBy,
+                              });
+                            }
+                          },
+                          child: Row(
+                            children: [
+                              Icon(
+                                (data['likedBy'] is List && (data['likedBy'] as List).contains(AppSession().email))
+                                    ? Icons.star_rounded
+                                    : Icons.star_border_rounded,
+                                size: 22,
+                                color: (data['likedBy'] is List && (data['likedBy'] as List).contains(AppSession().email))
+                                    ? const Color(0xFFF59E0B)
+                                    : const Color(0xFF6B7280),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '$likes Stars',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: (data['likedBy'] is List && (data['likedBy'] as List).contains(AppSession().email))
+                                      ? const Color(0xFFF59E0B)
+                                      : const Color(0xFF4B5563),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(height: 20, width: 1, color: const Color(0xFFE5E7EB)),
+                        GestureDetector(
+                          onTap: () => _showCommentsBottomSheet(context),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.chat_bubble_outline_rounded, size: 20, color: Color(0xFF6B7280)),
+                              const SizedBox(width: 6),
+                              Text(
+                                '$commentsCount Comments',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF4B5563),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),

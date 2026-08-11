@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:intl/intl.dart';
@@ -31,66 +31,50 @@ class _EmployeeTeamMembersTabState extends State<EmployeeTeamMembersTab> {
           return const Center(child: CircularProgressIndicator());
 
         final docs = snapshot.data!.docs;
+        final currentUserEmail = (AppSession().email ?? '').toLowerCase();
+        String myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
+        if (myDept.isEmpty) {
+          for (var doc in docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final email = (data['email'] ?? doc.id).toString().toLowerCase();
+            if (email == currentUserEmail) {
+              myDept = (data['department'] ?? '').toString().trim().toLowerCase();
+              break;
+            }
+          }
+        }
+
         List<Map<String, dynamic>> allUsers = [];
 
         for (var doc in docs) {
           final data = doc.data() as Map<String, dynamic>;
+          final dept = (data['department'] ?? '').toString().trim().toLowerCase();
+
+          // Strict filter: non-super-admins ONLY see members in the exact same department
+          if (myDept.isNotEmpty && !AppSession().isSuperAdmin) {
+            if (dept != myDept) continue;
+          }
+
           allUsers.add({
-            'email': data['email'] ?? '',
-            'firstName': data['firstName'] ?? '',
+            'email': data['email'] ?? doc.id,
+            'firstName': data['firstName'] ?? data['name'] ?? '',
             'lastName': data['lastName'] ?? '',
-            'role': data['role'] ?? 'Employee',
+            'role': data['role'] ?? data['designation'] ?? 'Employee',
             'department': data['department'] ?? '',
             'reportingManager': data['reportingManager'] ?? '',
           });
         }
 
-        // For exact matching of UI, we use the real users but if there aren't enough we inject dummy users
         if (allUsers.isEmpty) {
-          allUsers = [
-            {
-              'email': 'rahul@test.com',
-              'firstName': 'Rahul',
-              'lastName': 'Mehta',
-              'role': 'Design Lead',
-              'department': 'Design'
-            },
-            {
-              'email': 'alex@test.com',
-              'firstName': 'Alex',
-              'lastName': 'Harrison',
-              'role': 'Product Designer',
-              'department': 'Design'
-            },
-            {
-              'email': 'emma@test.com',
-              'firstName': 'Emma',
-              'lastName': 'Wilson',
-              'role': 'Product Designer',
-              'department': 'Design'
-            },
-            {
-              'email': 'raj@test.com',
-              'firstName': 'Raj',
-              'lastName': 'Patel',
-              'role': 'Product Designer',
-              'department': 'Design'
-            },
-            {
-              'email': 'olivia@test.com',
-              'firstName': 'Olivia',
-              'lastName': 'Smith',
-              'role': 'Associate Designer',
-              'department': 'Design'
-            },
-            {
-              'email': 'daniel@test.com',
-              'firstName': 'Daniel',
-              'lastName': 'Carter',
-              'role': 'Associate Designer',
-              'department': 'Design'
-            },
-          ];
+          return const Padding(
+            padding: EdgeInsets.all(32.0),
+            child: Center(
+              child: Text(
+                'No members found in your department.',
+                style: TextStyle(fontSize: 14, color: Color(0xFF6B7280), fontWeight: FontWeight.w500),
+              ),
+            ),
+          );
         }
 
         // Identify team lead (for demo, first user with 'Lead' in role, or just the first user)

@@ -289,12 +289,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
       // Restore user name
       String? userName;
+      String? department;
       final userDoc = await FirestoreService.companyDoc(companyId)
           .collection('users')
           .doc(email)
           .get();
       if (userDoc.exists && userDoc.data()?['name'] != null) {
         userName = userDoc.data()?['name'] as String?;
+        department = userDoc.data()?['department'] as String?;
       } else {
         final q = await FirestoreService.companyDoc(companyId)
             .collection('users')
@@ -303,6 +305,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
             .get();
         if (q.docs.isNotEmpty) {
           userName = q.docs.first.data()['name'] as String?;
+          department = q.docs.first.data()['department'] as String?;
         }
       }
 
@@ -323,6 +326,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         paidLeavesPerYear: parseInt(cd['paidLeavesPerYear']),
         featurePermissions: cd['featurePermissions'] as Map<String, dynamic>?,
         userName: userName,
+        department: department,
       );
 
       final loc = cd['location'] as Map<String, dynamic>?;
@@ -358,8 +362,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
       // Load member profile
       final memberDoc = await FirestoreService.orgMemberDoc(orgId, user.uid).get();
       String? userName;
+      String? department;
       if (memberDoc.exists && memberDoc.data() != null) {
-        userName = memberDoc.data()!['fullName'] as String?;
+        userName = (memberDoc.data()!['fullName'] ?? memberDoc.data()!['name']) as String?;
+        department = memberDoc.data()!['department'] as String?;
       }
 
       AppSession().populate(
@@ -370,6 +376,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         companyName: od['companyName'] as String? ?? od['name'] as String?,
         featurePermissions: od['featurePermissions'] as Map<String, dynamic>?,
         userName: userName,
+        department: department,
       );
 
       NotificationService().onUserLogin();

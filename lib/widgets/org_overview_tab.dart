@@ -1,6 +1,8 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
+import 'package:attendance_app/utils/app_session.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 class OrgOverviewTab extends StatelessWidget {
@@ -18,53 +20,70 @@ class OrgOverviewTab extends StatelessWidget {
           }
 
           final docs = snapshot.data?.docs ?? [];
-          
+
           int totalEmployees = docs.length;
           Set<String> departments = {};
           Map<String, int> deptCounts = {};
 
           for (var doc in docs) {
             final data = doc.data() as Map<String, dynamic>;
-            final dept = data['department'] ?? 'Unknown';
-            departments.add(dept);
-            deptCounts[dept] = (deptCounts[dept] ?? 0) + 1;
+            final dept = (data['department'] ?? 'Unknown').toString();
+            if (dept.isNotEmpty) {
+              departments.add(dept);
+              deptCounts[dept] = (deptCounts[dept] ?? 0) + 1;
+            }
           }
 
-          int activeShifts = 3; // Simulated
-          int openAlerts = 3; // Simulated
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirestoreService.tasksCol.snapshots(),
+            builder: (context, tasksSnap) {
+              final tasks = tasksSnap.data?.docs ?? [];
+              final openTasks = tasks.where((t) {
+                final d = t.data() as Map<String, dynamic>;
+                return (d['status'] ?? '') != 'completed';
+              }).length;
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildTopGrid(totalEmployees, departments.length, activeShifts, openAlerts),
-                const SizedBox(height: 16),
-                _buildOrgHealthAndProfile(),
-                const SizedBox(height: 16),
-                _buildHeadcountGrowthCard(),
-                const SizedBox(height: 16),
-                _buildDepartmentDistributionCard(deptCounts),
-                const SizedBox(height: 16),
-                _buildRecentActivityCard(),
-                const SizedBox(height: 32),
-              ],
-            ),
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirestoreService.announcementsCol.snapshots(),
+                builder: (context, annSnap) {
+                  final announcements = annSnap.data?.docs ?? [];
+
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildTopGrid(totalEmployees, departments.length, announcements.length, openTasks),
+                        const SizedBox(height: 16),
+                        _buildOrgInfoCard(),
+                        const SizedBox(height: 16),
+                        _buildHeadcountGrowthCard(totalEmployees),
+                        const SizedBox(height: 16),
+                        _buildDepartmentDistributionCard(deptCounts),
+                        const SizedBox(height: 16),
+                        _buildRecentActivityCard(docs),
+                        const SizedBox(height: 32),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
           );
         },
       ),
     );
   }
 
-  Widget _buildTopGrid(int employees, int departments, int activeShifts, int openAlerts) {
+  Widget _buildTopGrid(int employees, int departments, int announcements, int openTasks) {
     return Row(
       children: [
         Expanded(
           child: Column(
             children: [
-              _buildMetricCard(employees.toString(), 'Total Employees', const Color(0xFFEEF2FF), const Color(0xFF5C5CFF)),
+              _buildMetricCard(employees.toString(), 'Total Employees', const Color(0xFFEEF2FF), const Color(0xFF5C5CFF), Icons.people_alt_rounded),
               const SizedBox(height: 16),
-              _buildMetricCard(activeShifts.toString(), 'Active Shifts', const Color(0xFFECFDF5), const Color(0xFF10B981)),
+              _buildMetricCard(announcements.toString(), 'Announcements', const Color(0xFFECFDF5), const Color(0xFF10B981), Icons.campaign_rounded),
             ],
           ),
         ),
@@ -72,9 +91,9 @@ class OrgOverviewTab extends StatelessWidget {
         Expanded(
           child: Column(
             children: [
-              _buildMetricCard(departments.toString(), 'Departments', const Color(0xFFF3E8FF), const Color(0xFF7C3AED)),
+              _buildMetricCard(departments.toString(), 'Departments', const Color(0xFFF3E8FF), const Color(0xFF7C3AED), Icons.business_rounded),
               const SizedBox(height: 16),
-              _buildMetricCard(openAlerts.toString(), 'Open Alerts', const Color(0xFFFEF2F2), const Color(0xFFEF4444)),
+              _buildMetricCard(openTasks.toString(), 'Open Tasks', const Color(0xFFFEF2F2), const Color(0xFFEF4444), Icons.task_alt_rounded),
             ],
           ),
         ),
@@ -82,7 +101,7 @@ class OrgOverviewTab extends StatelessWidget {
     );
   }
 
-  Widget _buildMetricCard(String value, String label, Color bgColor, Color textColor) {
+  Widget _buildMetricCard(String value, String label, Color bgColor, Color textColor, IconData icon) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -110,6 +129,7 @@ class OrgOverviewTab extends StatelessWidget {
                   color: bgColor,
                   borderRadius: BorderRadius.circular(8),
                 ),
+                child: Icon(icon, color: textColor, size: 18),
               ),
               const Icon(Icons.chevron_right, color: Color(0xFFD1D5DB), size: 16),
             ],
@@ -129,67 +149,70 @@ class OrgOverviewTab extends StatelessWidget {
     );
   }
 
-  Widget _buildOrgHealthAndProfile() {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                )
-              ],
+  Widget _buildOrgInfoCard() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirestoreService.companyDoc().snapshots(),
+      builder: (context, snap) {
+        final data = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final adminDetails = data['adminDetails'] as Map<String, dynamic>? ?? {};
+        final companyName = data['companyName'] ?? data['name'] ?? 'Your Company';
+        final industry = data['industry'] ?? adminDetails['industry'] ?? 'Technology';
+        final city = data['city'] ?? adminDetails['city'] ?? '';
+
+        return Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Org Health', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6B7280))),
+                    const SizedBox(height: 8),
+                    const Text('87%', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
+                    const SizedBox(height: 4),
+                    const Text('Good standing', style: TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
+                  ],
+                ),
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Org Health', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6B7280))),
-                const SizedBox(height: 8),
-                const Text('87%', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
-                const SizedBox(height: 4),
-                const Text('Good standing', style: TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
-              ],
+            const SizedBox(width: 16),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Org Profile', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6B7280))),
+                    const SizedBox(height: 8),
+                    Text(companyName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF5C5CFF)), overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 4),
+                    Text('$industry${city.isNotEmpty ? ' · $city' : ''}', style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF)), overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                )
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Org Profile', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6B7280))),
-                const SizedBox(height: 8),
-                const Text('Sunrise Tech', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF5C5CFF))),
-                const SizedBox(height: 4),
-                const Text('Est. 2013 Â· Bangalore', style: TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
-              ],
-            ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildHeadcountGrowthCard() {
+  Widget _buildHeadcountGrowthCard(int total) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -197,11 +220,7 @@ class OrgOverviewTab extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          )
+          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))
         ],
       ),
       child: Column(
@@ -209,9 +228,9 @@ class OrgOverviewTab extends StatelessWidget {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('HEADCOUNT GROWTH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6B7280), letterSpacing: 0.5)),
-              const Icon(Icons.chevron_right, size: 16, color: Color(0xFFD1D5DB)),
+            children: const [
+              Text('HEADCOUNT GROWTH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6B7280), letterSpacing: 0.5)),
+              Icon(Icons.chevron_right, size: 16, color: Color(0xFFD1D5DB)),
             ],
           ),
           const SizedBox(height: 24),
@@ -223,9 +242,7 @@ class OrgOverviewTab extends StatelessWidget {
                   show: true,
                   drawVerticalLine: false,
                   horizontalInterval: 45,
-                  getDrawingHorizontalLine: (value) {
-                    return FlLine(color: const Color(0xFFF3F4F6), strokeWidth: 1);
-                  },
+                  getDrawingHorizontalLine: (value) => FlLine(color: const Color(0xFFF3F4F6), strokeWidth: 1),
                 ),
                 titlesData: FlTitlesData(
                   show: true,
@@ -238,15 +255,12 @@ class OrgOverviewTab extends StatelessWidget {
                       interval: 1,
                       getTitlesWidget: (value, meta) {
                         const style = TextStyle(color: Color(0xFF9CA3AF), fontSize: 10);
-                        Widget text;
-                        switch (value.toInt()) {
-                          case 0: text = const Text('Apr', style: style); break;
-                          case 1: text = const Text('May', style: style); break;
-                          case 2: text = const Text('Jun', style: style); break;
-                          case 3: text = const Text('Jul', style: style); break;
-                          default: text = const Text('', style: style); break;
+                        final months = ['Apr', 'May', 'Jun', 'Jul'];
+                        final idx = value.toInt();
+                        if (idx >= 0 && idx < months.length) {
+                          return SideTitleWidget(axisSide: meta.axisSide, child: Text(months[idx], style: style));
                         }
-                        return SideTitleWidget(axisSide: meta.axisSide, child: text);
+                        return const SizedBox();
                       },
                     ),
                   ),
@@ -264,15 +278,15 @@ class OrgOverviewTab extends StatelessWidget {
                 borderData: FlBorderData(show: false),
                 minX: 0,
                 maxX: 3,
-                minY: 200,
-                maxY: 270,
+                minY: (total - 50).toDouble().clamp(0, double.infinity),
+                maxY: (total + 30).toDouble(),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [
-                      FlSpot(0, 215),
-                      FlSpot(1, 230),
-                      FlSpot(2, 235),
-                      FlSpot(3, 247),
+                    spots: [
+                      FlSpot(0, (total - 30).toDouble().clamp(0, double.infinity)),
+                      FlSpot(1, (total - 20).toDouble().clamp(0, double.infinity)),
+                      FlSpot(2, (total - 10).toDouble().clamp(0, double.infinity)),
+                      FlSpot(3, total.toDouble()),
                     ],
                     isCurved: false,
                     color: const Color(0xFF5C5CFF),
@@ -300,38 +314,39 @@ class OrgOverviewTab extends StatelessWidget {
 
   Widget _buildDepartmentDistributionCard(Map<String, int> deptCounts) {
     if (deptCounts.isEmpty) {
-      deptCounts = {
-        'Eng': 54,
-        'Design': 22,
-        'Mkt': 31,
-        'Sales': 45,
-        'Others': 95,
-      };
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+        ),
+        child: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Text('No department data yet', style: TextStyle(color: Color(0xFF9CA3AF))),
+          ),
+        ),
+      );
     }
 
     final colors = [
-      const Color(0xFF5C5CFF), // Indigo
-      const Color(0xFFF59E0B), // Orange
-      const Color(0xFF10B981), // Green
-      const Color(0xFF8B5CF6), // Purple
-      const Color(0xFFEF4444), // Red
+      const Color(0xFF5C5CFF),
+      const Color(0xFFF59E0B),
+      const Color(0xFF10B981),
+      const Color(0xFF8B5CF6),
+      const Color(0xFFEF4444),
+      const Color(0xFF06B6D4),
     ];
 
     List<PieChartSectionData> sections = [];
     List<Widget> legendItems = [];
-    
+
     int i = 0;
     deptCounts.forEach((key, value) {
       final color = colors[i % colors.length];
-      sections.add(
-        PieChartSectionData(
-          color: color,
-          value: value.toDouble(),
-          title: '',
-          radius: 16,
-        ),
-      );
-      
+      sections.add(PieChartSectionData(color: color, value: value.toDouble(), title: '', radius: 16));
       legendItems.add(
         Padding(
           padding: const EdgeInsets.only(bottom: 8.0),
@@ -350,7 +365,6 @@ class OrgOverviewTab extends StatelessWidget {
           ),
         ),
       );
-      
       i++;
     });
 
@@ -360,22 +374,16 @@ class OrgOverviewTab extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          )
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('DEPARTMENT DISTRIBUTION', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6B7280), letterSpacing: 0.5)),
-              const Icon(Icons.chevron_right, size: 16, color: Color(0xFFD1D5DB)),
+            children: const [
+              Text('DEPARTMENT DISTRIBUTION', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6B7280), letterSpacing: 0.5)),
+              Icon(Icons.chevron_right, size: 16, color: Color(0xFFD1D5DB)),
             ],
           ),
           const SizedBox(height: 24),
@@ -384,20 +392,10 @@ class OrgOverviewTab extends StatelessWidget {
               SizedBox(
                 width: 100,
                 height: 100,
-                child: PieChart(
-                  PieChartData(
-                    sectionsSpace: 2,
-                    centerSpaceRadius: 30,
-                    sections: sections,
-                  ),
-                ),
+                child: PieChart(PieChartData(sectionsSpace: 2, centerSpaceRadius: 30, sections: sections)),
               ),
               const SizedBox(width: 32),
-              Expanded(
-                child: Column(
-                  children: legendItems,
-                ),
-              )
+              Expanded(child: Column(children: legendItems)),
             ],
           ),
         ],
@@ -405,50 +403,58 @@ class OrgOverviewTab extends StatelessWidget {
     );
   }
 
-  Widget _buildRecentActivityCard() {
+  Widget _buildRecentActivityCard(List<QueryDocumentSnapshot> employees) {
+    final recent = employees.take(3).toList();
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          )
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('RECENT ACTIVITY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6B7280), letterSpacing: 0.5)),
-              const Icon(Icons.chevron_right, size: 16, color: Color(0xFFD1D5DB)),
+            children: const [
+              Text('RECENT MEMBERS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6B7280), letterSpacing: 0.5)),
+              Icon(Icons.chevron_right, size: 16, color: Color(0xFFD1D5DB)),
             ],
           ),
           const SizedBox(height: 20),
-          _buildActivityItem('Leave approved for Priya Sharma', '2m ago'),
-          const Divider(height: 24, color: Color(0xFFF3F4F6)),
-          _buildActivityItem('New hire Kavya Reddy onboarded', '1h ago'),
-          const Divider(height: 24, color: Color(0xFFF3F4F6)),
-          _buildActivityItem('Policy update published', '3h ago'),
+          if (recent.isEmpty)
+            const Text('No members yet', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12))
+          else
+            ...recent.asMap().entries.map((entry) {
+              final data = entry.value.data() as Map<String, dynamic>;
+              final name = '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'.trim();
+              final role = data['role'] ?? data['designation'] ?? 'Employee';
+              final dept = data['department'] ?? '';
+              return Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name.isEmpty ? (data['email'] ?? 'Member') : name,
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(dept.isEmpty ? role : dept, style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
+                    ],
+                  ),
+                  if (entry.key < recent.length - 1) const Divider(height: 24, color: Color(0xFFF3F4F6)),
+                ],
+              );
+            }),
         ],
       ),
-    );
-  }
-
-  Widget _buildActivityItem(String text, String time) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(child: Text(text, style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563)))),
-        const SizedBox(width: 8),
-        Text(time, style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
-      ],
     );
   }
 }

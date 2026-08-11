@@ -1,5 +1,8 @@
-﻿import 'package:attendance_app/screens/employee/task_detail_screen.dart';
+import 'package:attendance_app/screens/employee/task_detail_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:attendance_app/utils/firestore_service.dart';
+import 'package:attendance_app/utils/app_session.dart';
 
 class EmployeeTeamTasksTab extends StatefulWidget {
   const EmployeeTeamTasksTab({super.key});
@@ -133,24 +136,78 @@ class _EmployeeTeamTasksTabState extends State<EmployeeTeamTasksTab> {
   }
 
   Widget _buildList() {
-    List<Map<String, dynamic>> items;
-    if (_selectedTab == 0)
-      items = _todoTasks;
-    else if (_selectedTab == 1)
-      items = _inProgressTasks;
-    else
-      items = _completedTasks;
+    final myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
+    final myEmail = (AppSession().email ?? '').toString().trim().toLowerCase();
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: items.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 16),
-      itemBuilder: (context, index) {
-        if (_selectedTab == 0) return _buildTodoCard(items[index]);
-        if (_selectedTab == 1) return _buildInProgressCard(items[index]);
-        return _buildCompletedCard(items[index]);
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirestoreService.tasksCol.snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(40),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final rawDocs = snapshot.data?.docs ?? [];
+        final filteredDocs = rawDocs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final dept = (data['department'] ?? data['departmentName'] ?? '').toString().trim().toLowerCase();
+          final assignedTo = (data['assignedTo'] ?? '').toString().trim().toLowerCase();
+          if (AppSession().isSuperAdmin) return true;
+          if (myDept.isNotEmpty && dept == myDept) return true;
+          if (assignedTo == myEmail) return true;
+          return false;
+        }).toList();
+
+        final todoTasks = <Map<String, dynamic>>[];
+        final inProgressTasks = <Map<String, dynamic>>[];
+        final completedTasks = <Map<String, dynamic>>[];
+
+        for (var doc in filteredDocs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final status = (data['status'] ?? 'todo').toString().toLowerCase();
+          final item = {
+            'id': doc.id,
+            'title': data['title'] ?? data['taskName'] ?? 'Untitled Task',
+            'priority': data['priority'] ?? 'Medium',
+            'priorityColor': (data['priority'] == 'High') ? const Color(0xFFEF4444) : const Color(0xFFF59E0B),
+            'priorityBg': (data['priority'] == 'High') ? const Color(0xFFFEF2F2) : const Color(0xFFFFFBEB),
+            'assignee': data['assignedToName'] ?? data['assignedTo'] ?? 'Team Member',
+            'due': data['dueDate'] ?? 'Today',
+            'progress': data['progress'] ?? 50,
+            'completedDate': data['completedDate'] ?? 'Recently',
+            'status': data['status'] ?? 'Pending',
+            'statusColor': const Color(0xFF10B981),
+            ...data,
+          };
+          if (status == 'completed' || status == 'done') {
+            completedTasks.add(item);
+          } else if (status == 'in progress' || status == 'in_progress' || status == 'active') {
+            inProgressTasks.add(item);
+          } else {
+            todoTasks.add(item);
+          }
+        }
+
+        List<Map<String, dynamic>> items = _selectedTab == 0
+            ? (todoTasks.isNotEmpty ? todoTasks : _todoTasks)
+            : (_selectedTab == 1
+                ? (inProgressTasks.isNotEmpty ? inProgressTasks : _inProgressTasks)
+                : (completedTasks.isNotEmpty ? completedTasks : _completedTasks));
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: items.length,
+          separatorBuilder: (context, index) => const SizedBox(height: 16),
+          itemBuilder: (context, index) {
+            if (_selectedTab == 0) return _buildTodoCard(items[index]);
+            if (_selectedTab == 1) return _buildInProgressCard(items[index]);
+            return _buildCompletedCard(items[index]);
+          },
+        );
       },
     );
   }

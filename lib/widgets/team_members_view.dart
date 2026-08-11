@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
+import 'package:attendance_app/utils/app_session.dart';
 import 'package:attendance_app/features/attendance/screens/manager/employee_workspace_screen.dart';
 
 class TeamMembersView extends StatefulWidget {
@@ -105,59 +106,37 @@ class _TeamMembersViewState extends State<TeamMembersView> {
         }
 
         final docs = snapshot.data?.docs ?? [];
-        
-        // Let's create mock data to exactly match the design, as we don't have the real attendance status 
-        // in this simple employees stream. In a real app, this would be a complex join or a denormalized field.
-        final mockMembers = [
-          {
-            'name': 'Alex Harrison',
-            'role': 'Product Designer',
-            'department': 'Design',
+        final currentUserEmail = (AppSession().email ?? '').toLowerCase();
+        String myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
+        if (myDept.isEmpty) {
+          for (var doc in docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final email = (data['email'] ?? doc.id).toString().toLowerCase();
+            if (email == currentUserEmail) {
+              myDept = (data['department'] ?? '').toString().trim().toLowerCase();
+              break;
+            }
+          }
+        }
+
+        final filteredDocs = docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final dept = (data['department'] ?? '').toString().trim().toLowerCase();
+          if (myDept.isEmpty || AppSession().isSuperAdmin) return true;
+          return dept == myDept;
+        }).toList();
+
+        final mockMembers = filteredDocs.map((d) {
+          final data = d.data() as Map<String, dynamic>;
+          return {
+            'name': data['name'] ?? data['userName'] ?? 'Team Member',
+            'role': data['designation'] ?? data['role'] ?? 'Member',
+            'department': data['department'] ?? 'General',
             'status': 'Present',
-            'time': 'In: 09:07 AM',
-            ...docs.isNotEmpty ? (docs[0].data() as Map<String, dynamic>) : {}, // merge with real data if available
-          },
-          {
-            'name': 'Emma Wilson',
-            'role': 'Product Designer',
-            'department': 'Design',
-            'status': 'Late',
-            'time': 'In: 09:38 AM',
-            ...docs.length > 1 ? (docs[1].data() as Map<String, dynamic>) : {},
-          },
-          {
-            'name': 'Raj Patel',
-            'role': 'Product Designer',
-            'department': 'Design',
-            'status': 'Present',
-            'time': 'In: 08:55 AM',
-            ...docs.length > 2 ? (docs[2].data() as Map<String, dynamic>) : {},
-          },
-          {
-            'name': 'Olivia Smith',
-            'role': 'Associate Designer',
-            'department': 'Design',
-            'status': 'WFH',
             'time': 'In: 09:00 AM',
-            ...docs.length > 3 ? (docs[3].data() as Map<String, dynamic>) : {},
-          },
-          {
-            'name': 'Daniel Carter',
-            'role': 'Associate Designer',
-            'department': 'Design',
-            'status': 'On Leave',
-            'time': 'Absent/On Leave',
-            ...docs.length > 4 ? (docs[4].data() as Map<String, dynamic>) : {},
-          },
-          {
-            'name': 'Neha Kumar',
-            'role': 'UX Designer',
-            'department': 'Design',
-            'status': 'Present',
-            'time': 'In: 09:02 AM',
-            ...docs.length > 5 ? (docs[5].data() as Map<String, dynamic>) : {},
-          },
-        ];
+            ...data,
+          };
+        }).toList();
 
         return ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
