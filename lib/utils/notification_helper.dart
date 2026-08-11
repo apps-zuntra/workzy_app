@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:attendance_app/utils/app_session.dart';
 import 'package:attendance_app/utils/onesignal_helper.dart';
@@ -163,10 +163,11 @@ class NotificationHelper {
 
   static Future<List<String>> _getAdminEmails(String companyId) async {
     final List<String> emails = [];
+    final adminRoles = ['super_admin', 'superadmin', 'hr_admin', 'hradmin', 'admin'];
     try {
       final companyAdminsSnap = await FirestoreService.companyDoc(companyId)
           .collection('users')
-          .where('role', isEqualTo: 'admin')
+          .where('role', whereIn: adminRoles)
           .get();
       for (var doc in companyAdminsSnap.docs) {
         final email = (doc.data()['email'] as String? ?? doc.id).trim().toLowerCase();
@@ -182,7 +183,7 @@ class NotificationHelper {
       final adminsSnap = await FirebaseFirestore.instance
           .collection('approved_users')
           .where('companyId', isEqualTo: companyId)
-          .where('role', isEqualTo: 'admin')
+          .where('role', whereIn: adminRoles)
           .get();
       for (var doc in adminsSnap.docs) {
         final email = doc.id.trim().toLowerCase();

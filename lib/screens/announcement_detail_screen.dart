@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:attendance_app/utils/app_session.dart';
+import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:attendance_app/theme/app_theme.dart';
 
 class AnnouncementDetailScreen extends StatefulWidget {
@@ -498,27 +499,48 @@ class _AnnouncementDetailScreenState extends State<AnnouncementDetailScreen> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                authorName,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF1F2937),
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Role: ${authorRole[0].toUpperCase()}${authorRole.substring(1)}',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFF6B7280),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
+                          child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                            stream: (data['authorEmail'] as String?) != null && (data['authorEmail'] as String).isNotEmpty
+                                ? FirestoreService.employeeDoc(data['authorEmail']).snapshots()
+                                : null,
+                            builder: (context, userSnap) {
+                              final userData = userSnap.data?.data() ?? {};
+                              final liveRole = (userData['role'] ?? userData['designation'] ?? authorRole).toString();
+                              final liveName = (userData['name'] ?? userData['userName'] ?? authorName).toString();
+                              final rawRole = liveRole.toLowerCase().replaceAll('_', ' ');
+                              final displayRole = (rawRole == 'super admin' || rawRole == 'superadmin')
+                                  ? 'Super Admin'
+                                  : (rawRole == 'hr admin' || rawRole == 'hradmin')
+                                      ? 'HR Admin'
+                                      : (rawRole == 'manager')
+                                          ? 'Manager'
+                                          : (rawRole == 'employee')
+                                              ? 'Employee'
+                                              : rawRole.split(' ').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    liveName,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF1F2937),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Role: $displayRole',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Color(0xFF6B7280),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                         ),
                       ],

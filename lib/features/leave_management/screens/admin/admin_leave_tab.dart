@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:attendance_app/theme/app_theme.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
+import 'package:attendance_app/utils/app_session.dart';
 
 class AdminLeaveTab extends StatefulWidget {
   const AdminLeaveTab({super.key});
@@ -25,8 +26,9 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
   @override
   void initState() {
     super.initState();
+    final userEmail = user?.email ?? AppSession().email ?? '';
     _leaveRequestsStream =
-        FirestoreService.userLeaveRequestsCol(user?.email ?? '').snapshots();
+        FirestoreService.userLeaveRequestsCol(userEmail).snapshots();
   }
 
   @override
@@ -42,12 +44,19 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
         }
 
         final docs = snapshot.data!.docs.toList();
+        DateTime? parseDate(dynamic d) {
+          if (d is Timestamp) return d.toDate();
+          if (d is DateTime) return d;
+          if (d is String) return DateTime.tryParse(d);
+          return null;
+        }
+
         docs.sort((a, b) {
           final aData = a.data() as Map<String, dynamic>;
           final bData = b.data() as Map<String, dynamic>;
           
-          final aDate = aData['fromDate'] as Timestamp?;
-          final bDate = bData['fromDate'] as Timestamp?;
+          final aDate = parseDate(aData['fromDate']);
+          final bDate = parseDate(bData['fromDate']);
           
           if (aDate == null && bDate == null) return 0;
           if (aDate == null) return 1;
@@ -55,17 +64,18 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
           return bDate.compareTo(aDate);
         });
 
-        int usedAnnual = _calculateUsed(docs, 'Annual Leave');
-        int usedSick = _calculateUsed(docs, 'Sick Leave');
-        int usedCasual = _calculateUsed(docs, 'Casual Leave');
+        int usedAnnual = _calculateUsed(docs, 'Annual');
+        int usedSick = _calculateUsed(docs, 'Sick');
+        int usedCasual = _calculateUsed(docs, 'Casual');
 
         // Filter the list for the history section
         List<QueryDocumentSnapshot> filteredDocs = docs;
         if (_selectedFilter != 'All') {
           filteredDocs = docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            final type = data['leaveType'] as String? ?? '';
-            return type == _selectedFilter;
+            final type = (data['leaveType'] as String? ?? '').toLowerCase();
+            final target = _selectedFilter.toLowerCase().replaceAll(' leave', '');
+            return type.contains(target);
           }).toList();
         }
 
@@ -180,15 +190,22 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
     );
   }
 
-  int _calculateUsed(List<QueryDocumentSnapshot> docs, String type) {
+  int _calculateUsed(List<QueryDocumentSnapshot> docs, String typeKeyword) {
     int total = 0;
     final currentYear = DateTime.now().year;
     for (var doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
-      if (data['leaveType'] == type && data['status']?.toString().toLowerCase() == 'approved') {
-        final start = (data['fromDate'] as Timestamp?)?.toDate();
-        if (start != null && start.year == currentYear) {
-          total += (data['durationInDays'] as num?)?.toInt() ?? 0;
+      final leaveType = (data['leaveType'] as String? ?? '').toLowerCase();
+      final status = (data['status'] as String? ?? '').toLowerCase();
+      if (leaveType.contains(typeKeyword.toLowerCase()) && status == 'approved') {
+        DateTime? start;
+        final rawDate = data['fromDate'];
+        if (rawDate is Timestamp) start = rawDate.toDate();
+        else if (rawDate is DateTime) start = rawDate;
+        else if (rawDate is String) start = DateTime.tryParse(rawDate);
+
+        if (start == null || start.year == currentYear) {
+          total += (data['durationInDays'] as num?)?.toInt() ?? 1;
         }
       }
     }
@@ -312,16 +329,21 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
 
     // Date formatting
     String dateRangeStr = '';
-    final fromTimestamp = data['fromDate'] as Timestamp?;
-    final toTimestamp = data['toDate'] as Timestamp?;
+    DateTime? parseDate(dynamic d) {
+      if (d is Timestamp) return d.toDate();
+      if (d is DateTime) return d;
+      if (d is String) return DateTime.tryParse(d);
+      return null;
+    }
+
+    final fromDate = parseDate(data['fromDate']);
+    final toDate = parseDate(data['toDate']);
     final duration = (data['durationInDays'] as num?)?.toInt() ?? 1;
     
-    if (fromTimestamp != null) {
-      final fromDate = fromTimestamp.toDate();
+    if (fromDate != null) {
       final fromStr = DateFormat('MMM d, yyyy').format(fromDate);
       
-      if (toTimestamp != null) {
-        final toDate = toTimestamp.toDate();
+      if (toDate != null) {
         // If same day
         if (fromDate.year == toDate.year && fromDate.month == toDate.month && fromDate.day == toDate.day) {
           dateRangeStr = '$fromStr · $duration day${duration > 1 ? 's' : ''}';

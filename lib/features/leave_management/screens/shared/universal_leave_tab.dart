@@ -41,7 +41,8 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
   @override
   void initState() {
     super.initState();
-    _leaveRequestsStream = FirestoreService.userLeaveRequestsCol(user?.email ?? '').snapshots();
+    final userEmail = user?.email ?? AppSession().email ?? '';
+    _leaveRequestsStream = FirestoreService.userLeaveRequestsCol(userEmail).snapshots();
   }
 
   @override
@@ -71,8 +72,9 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
       }
 
       final data = {
+        'companyId': FirestoreService.companyId,
         'userId': AppSession().uid,
-        'email': email,
+        'email': email ?? AppSession().email,
         'leaveType': _selectedLeaveType,
         'duration': _leaveDuration,
         'durationInDays': durationInDays,
@@ -94,12 +96,16 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
       final dateRangeStr = durationInDays == 1
           ? 'on ${DateFormat('MMM dd, yyyy').format(_fromDate)}'
           : 'from ${DateFormat('MMM dd').format(_fromDate)} to ${DateFormat('MMM dd').format(_toDate)}';
-      final title = 'New Leave Request ðŸ“';
+      final title = 'New Leave Request ðŸ“ ';
       final body = '${AppSession().userName ?? "Employee"} applied for $_selectedLeaveType $dateRangeStr.';
       final extraData = {'employeeEmail': email};
 
-      if (senderRole == 'admin') {
-        await NotificationHelper.notifyAdmin(title: title, body: body, type: 'new_leave_request', extraData: extraData);
+      if (senderRole == 'admin' || senderRole == 'super_admin' || senderRole == 'hr_admin') {
+        await NotificationHelper.notifyAdmin(
+            title: title,
+            body: body,
+            type: 'new_leave_request',
+            extraData: extraData);
       } else if (senderRole == 'manager') {
         await NotificationHelper.notifyAdmin(title: title, body: body, type: 'new_leave_request', extraData: extraData);
       } else {
@@ -243,7 +249,7 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildLeaveBalanceCard(),
+            _buildLeaveBalanceCard(requests),
             const SizedBox(height: 16),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,7 +271,30 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
     );
   }
 
-  Widget _buildLeaveBalanceCard() {
+  Widget _buildLeaveBalanceCard(List<QueryDocumentSnapshot> requests) {
+    int usedAnnual = 0, usedSick = 0, usedCasual = 0;
+    
+    for (final doc in requests) {
+      final data = doc.data() as Map<String, dynamic>;
+      final status = (data['status'] ?? '').toString().toLowerCase();
+      if (status == 'approved') {
+        final type = (data['leaveType'] ?? '').toString().toLowerCase();
+        final days = (data['durationInDays'] as num?)?.toInt() ?? 1;
+        if (type.contains('annual')) usedAnnual += days;
+        else if (type.contains('sick')) usedSick += days;
+        else if (type.contains('casual')) usedCasual += days;
+      }
+    }
+
+    int maxAnnual = 15;
+    int maxSick = 10;
+    int maxCasual = 12;
+
+    int totalUsed = usedAnnual + usedSick + usedCasual;
+    int totalMax = maxAnnual + maxSick + maxCasual;
+    int remaining = totalMax - totalUsed;
+    if (remaining < 0) remaining = 0;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -296,21 +325,21 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
           const SizedBox(height: 16),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
-            children: const [
-              Text('28', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: AppTheme.textPrimary, height: 1.0)),
-              SizedBox(width: 8),
-              Padding(
+            children: [
+              Text('$remaining', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: AppTheme.textPrimary, height: 1.0)),
+              const SizedBox(width: 8),
+              const Padding(
                 padding: EdgeInsets.only(bottom: 6),
                 child: Text('days remaining', style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
               ),
             ],
           ),
           const SizedBox(height: 24),
-          _buildLeaveProgress('Casual Leave', 8, 12, const Color(0xFF5C5CFF)),
+          _buildLeaveProgress('Casual Leave', usedCasual, maxCasual, const Color(0xFF5C5CFF)),
           const SizedBox(height: 16),
-          _buildLeaveProgress('Sick Leave', 8, 10, const Color(0xFF10B981)),
+          _buildLeaveProgress('Sick Leave', usedSick, maxSick, const Color(0xFF10B981)),
           const SizedBox(height: 16),
-          _buildLeaveProgress('Earned Leave', 12, 15, const Color(0xFF8B5CF6)),
+          _buildLeaveProgress('Annual Leave', usedAnnual, maxAnnual, const Color(0xFF8B5CF6)),
         ],
       ),
     );
@@ -820,7 +849,10 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
     else if (_selectedHistorySubTab == 2) filterStatus = 'rejected';
     else filterStatus = 'cancelled';
 
-    final filtered = requests.where((doc) => (doc.data() as Map)['status'] == filterStatus).toList();
+    final filtered = requests.where((doc) {
+      final status = ((doc.data() as Map)['status'] ?? '').toString().toLowerCase();
+      return status == filterStatus.toLowerCase();
+    }).toList();
 
     if (filtered.isEmpty) {
       return Center(
@@ -850,7 +882,7 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
   }
 
   Widget _buildHistoryCard(Map data, {required bool isCompact}) {
-    final status = data['status'] as String? ?? 'pending';
+    final status = (data['status'] ?? 'pending').toString().toLowerCase();
     Color statusColor;
     Color statusBg;
     String statusText;
@@ -873,12 +905,20 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
       statusText = 'Pending';
     }
 
-    final fromDate = (data['fromDate'] as Timestamp?)?.toDate();
-    final toDate = (data['toDate'] as Timestamp?)?.toDate();
-    final requestDate = (data['requestDate'] as Timestamp?)?.toDate();
+    DateTime? parseDate(dynamic d) {
+      if (d == null) return null;
+      if (d is Timestamp) return d.toDate();
+      if (d is DateTime) return d;
+      if (d is String) return DateTime.tryParse(d);
+      return null;
+    }
+
+    final fromDate = parseDate(data['fromDate']);
+    final toDate = parseDate(data['toDate']);
+    final requestDate = parseDate(data['requestDate']);
     
     final dateRangeStr = (fromDate != null && toDate != null)
-        ? '${DateFormat('MMM d').format(fromDate)} â€“ ${DateFormat('MMM d').format(toDate)}'
+        ? '${DateFormat('MMM d').format(fromDate)} – ${DateFormat('MMM d').format(toDate)}'
         : 'Unknown Dates';
     
     final days = data['durationInDays'] ?? 1;

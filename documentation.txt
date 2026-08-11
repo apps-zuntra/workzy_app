@@ -1,0 +1,326 @@
+================================================================================
+          ATTENDANCE MANAGEMENT SYSTEM - IN-DEPTH COMPREHENSIVE DOCUMENTATION
+================================================================================
+
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. Executive Summary & Core Architecture
+2. User Roles & Access Hierarchy
+3. System Initialization & Auth Flow
+4. Geofencing & Location Engine Architecture
+5. Database Architecture & Collection Schemas (Inch-by-Inch Breakdown)
+   - Global Collections
+   - Organization / Multi-tenant Subcollections
+   - Collection Group Query Structures
+6. App Features Breakdown by Role
+   - Admin Capabilities & Dashboards
+   - Manager Capabilities & Workflow Engine
+   - Employee Features & Daily Operations
+7. Notification & Real-Time Sync Services
+8. Security Rules & Access Control Policies
+9. File Export & Data Reporting Architecture
+
+================================================================================
+1. EXECUTIVE SUMMARY & CORE ARCHITECTURE
+================================================================================
+The Attendance Management App is a multi-tenant enterprise application built using 
+Flutter (cross-platform frontend supporting Web, Android, iOS, Windows, Desktop) 
+and Firebase (Firebase Auth, Cloud Firestore, Firebase Messaging, Firebase Storage).
+
+Core Design Principles:
+- Multi-Tenant Isolation: Every organization's data is isolated under tenant scope
+  represented by `companyId` / `orgId`.
+- Role-Based Dynamic Dashboards: System adapts dynamically to Admin, Manager, and 
+  Employee access privileges.
+- High-Precision Geofenced Attendance: Real-time GPS verification against office 
+  coordinates with dynamic allowed radius checks and fallback caching.
+- Reactive Firestore Data Flow: UI automatically updates on data changes using 
+  Firestore streams (`snapshots()`) and indexed Collection Group queries.
+
+================================================================================
+2. USER ROLES & ACCESS HIERARCHY
+================================================================================
+The app maintains a strict 3-tier user role architecture:
+
+1. ADMIN:
+   - Organization Setup, Company Configuration, Working Hours, Grace Periods, Office Location Coordinates, Allowed Radius.
+   - Master Overrides across all departments, member permissions, shift creations, and system audit logs.
+   - Full read/write authority across the organization's Firestore trees.
+
+2. MANAGER:
+   - Department and Team leadership privileges.
+   - Live Team Attendance tracking, Approval workflow handling (Leave requests, Attendance correction requests, WFH requests, Shift change requests, Task extensions).
+   - Ability to post announcements, assign team tasks, view monthly reports, and manage employee profiles within their assigned scope.
+
+3. EMPLOYEE:
+   - Personal Attendance Check-In / Check-Out with live Geofencing status.
+   - Leave applications, attendance correction submissions, overtime logging.
+   - Calendar tracking, performance analytics, task completion updates, and viewing company announcements/feed.
+
+================================================================================
+3. SYSTEM INITIALIZATION & AUTH FLOW
+================================================================================
+Files involved: `lib/main.dart`, `lib/screens/auth_wrapper.dart`, `lib/utils/app_session.dart`
+
+Authentication & Boot Bootstrapping Pipeline:
+1. `main()` initializes `Firebase.initializeApp()`, registers `FirebaseMessaging.onBackgroundMessage`, and calls `NotificationService().initialize()`.
+2. `AuthWrapper` listens to `FirebaseAuth.instance.authStateChanges()`.
+3. If no user is authenticated, it routes to `LoginScreen()`.
+4. When authenticated:
+   a. Loads the global mapping from `approved_users/{email.toLowerCase()}`.
+   b. Extracts `companyId` / `orgId` and `role`.
+   c. Fetches tenant details from `organizations/{companyId}` (or fallback search by `managerEmail`).
+   d. Fetches employee user details from `organizations/{companyId}/users/{email}`.
+   e. Populates the `AppSession` singleton with:
+      - `uid`, `email`, `role`, `companyId`, `companyName`, `userName`
+      - `officeLat`, `officeLng`, `allowedRadius`
+      - `shiftStartTime`, `shiftEndTime`, `gracePeriod`, `paidLeavesPerYear`
+   f. Triggers `NotificationService().onUserLogin()` to configure OneSignal tags and start Firestore real-time notification listeners.
+5. Location Service Check:
+   - Evaluates device location permissions and system GPS state via `Geolocator`.
+   - If location services or permissions are missing, displays `LocationRequiredScreen` requiring user resolution before proceeding into main screens.
+6. Navigation Dispatch:
+   - Admin   -> `AdminDashboardScreen`
+   - Manager -> `ManagerMainScreen`
+   - Employee -> `EmployeeMainScreen`
+
+================================================================================
+4. GEOFENCING & LOCATION ENGINE ARCHITECTURE
+================================================================================
+File involved: `lib/utils/location_service.dart`
+
+Features & Operating Engine:
+- Dynamic Office Coordinates: Office latitude (`officeLat`) and longitude (`officeLng`) 
+  along with `allowedRadius` (in meters) are dynamically fetched from the organization's 
+  document in Firestore during session initialization.
+- Real-time GPS High-Performance Stream: Uses Android `ForegroundNotificationConfig` 
+  and iOS `AppleSettings` to maintain active high-accuracy position updates.
+- Distance Calculation: Uses `Geolocator.distanceBetween(lat1, lng1, officeLat, officeLng)` 
+  to compute distance in meters from office center.
+- Distance Verification Logic:
+  - Inside Geofence: `distance <= allowedRadius` -> Classified as 'Office' work mode.
+  - Outside Geofence: Classified as 'WFH' / Remote or flagged for manager approval depending on company policy.
+- Accuracy Safeguards & Fallbacks:
+  - Filters out locations with poor accuracy (> 100 meters error).
+  - Uses 30-second cached location fallback if fresh GPS fix times out to ensure smooth UX without failing offline workers.
+  - Reverse Geocoding (`geocoding` package) converts LatLng to full readable physical address strings.
+
+================================================================================
+5. DATABASE ARCHITECTURE & COLLECTION SCHEMAS (INCH-BY-INCH BREAKDOWN)
+================================================================================
+File involved: `lib/utils/firestore_service.dart`, `firestore.rules`
+
+A. GLOBAL TOP-LEVEL COLLECTIONS
+
+1. `approved_users` Document ID: `{email.toLowerCase()}`
+   - Function: Acts as the primary global directory mapping user emails to their assigned tenant and role prior to or during authentication.
+   - Fields:
+     * `email` (string): Lowercase email ID.
+     * `role` (string): 'admin' | 'manager' | 'employee'.
+     * `companyId` / `orgId` (string): Tenant identifier key.
+     * `status` (string): 'approved' | 'pending'.
+     * `createdAt` (timestamp): Registration timestamp.
+
+2. `organization_setup_requests` Document ID: `{requestId}`
+   - Function: Stores self-registration requests from new organizations signing up before full admin activation.
+   - Fields:
+     * `flow` (string): e.g. "pre_login_organization_setup".
+     * `status` (string): "pending_admin_setup" | "approved".
+     * `organizationName`, `contactPerson`, `contactEmail`, `contactNumber` (strings).
+     * `addressLine1`, `city`, `state`, `country`, `postalCode` (strings).
+     * `timeZone`, `organizationType`, `organizationSize` (strings).
+
+3. `admin_users` Document ID: `{uid}`
+   - Function: Global platform administration records.
+
+B. TENANT MULTI-TENANT ARCHITECTURE: `organizations/{companyId}`
+
+Master Document Path: `/organizations/{companyId}`
+Fields:
+- `companyName` / `name` (string): Organization name.
+- `managerEmail` (string): Primary creator/admin email.
+- `location` (map): `{"latitude": double, "longitude": double}`.
+- `allowedRadius` (number): Geofence distance threshold in meters.
+- `shiftStartTime` (string): HH:mm (e.g. "09:00").
+- `shiftEndTime` (string): HH:mm (e.g. "18:00").
+- `gracePeriod` (int): Minutes allowed for late check-in before deduction.
+- `paidLeavesPerYear` (int): Standard employee leave allocation.
+
+SUBCOLLECTIONS UNDER `/organizations/{companyId}/`:
+
+1. `users` Document ID: `{email.toLowerCase()}`
+   - Function: Stores comprehensive employee profile within the organization.
+   - Fields:
+     * `email` (string): Primary identifier.
+     * `name` / `fullName` (string): User display name.
+     * `role` (string): 'admin' | 'manager' | 'employee'.
+     * `department` (string): Assigned department (e.g., "Engineering").
+     * `designation` (string): Job title.
+     * `phone` / `contactNumber` (string): Phone number.
+     * `status` (string): 'approved' | 'inactive'.
+     * `fcmToken` (string): Firebase Cloud Messaging push token.
+     * `joiningDate` (timestamp).
+     * `paidLeaveBalance` (number): Available paid leave balance.
+
+2. `users/{email}/attendance` Document ID: `yyyy-MM-dd` (e.g. "2026-07-30")
+   - Function: Daily attendance record for specific employee.
+   - Fields:
+     * `companyId` (string): Tenant reference ID.
+     * `userId` (string): Employee email.
+     * `date` (timestamp): Midnight timestamp for date filtering.
+     * `recordDate` (string): "yyyy-MM-dd".
+     * `checkIn` (timestamp): Punch-in timestamp.
+     * `checkInLocation` (string): Reverse geocoded physical address or LatLng string.
+     * `checkOut` (timestamp): Punch-out timestamp.
+     * `checkOutLocation` (string): Punch-out address.
+     * `status` (string): 'Present' | 'Late' | 'Half Day' | 'Absent' | 'On Leave'.
+     * `workMode` (string): 'office' | 'wfh' | 'field'.
+     * `totalWorkHours` (double): Calculated total shift duration.
+     * `isAdjustmentRequest` (bool): True if correction request submitted.
+     * `remarkStatus` (string): 'pending' | 'approved' | 'rejected'.
+
+3. `users/{email}/leave_requests` Document ID: `{requestId}`
+   - Function: Employee leave applications.
+   - Fields:
+     * `companyId` (string).
+     * `userId` (string): User UID or Email.
+     * `userEmail` (string).
+     * `userName` (string).
+     * `department` (string).
+     * `leaveType` (string): 'Annual Leave' | 'Sick Leave' | 'Casual Leave' | 'Comp Off'.
+     * `fromDate` (timestamp).
+     * `toDate` (timestamp).
+     * `durationInDays` (number).
+     * `reason` (string).
+     * `status` (string): 'pending' | 'approved' | 'rejected'.
+     * `requestDate` (timestamp).
+     * `approvedBy` (string): Manager email who reviewed.
+     * `reviewComment` (string).
+
+4. `users/{email}/notifications` Document ID: `{notificationId}`
+   - Function: Personal targeted user push and in-app alerts.
+   - Fields:
+     * `title` (string).
+     * `body` (string).
+     * `type` (string): 'leave' | 'attendance' | 'announcement' | 'correction'.
+     * `timestamp` (timestamp).
+     * `isRead` (bool).
+
+5. `users/{email}/overtime_requests` Document ID: `{requestId}`
+   - Function: Overtime work log and compensation request.
+   - Fields:
+     * `companyId` (string).
+     * `userId` (string).
+     * `date` (timestamp).
+     * `hours` (double).
+     * `reason` (string).
+     * `status` (string): 'pending' | 'approved' | 'rejected'.
+
+6. `global_notifications` Document ID: `{notificationId}`
+   - Function: Organization-wide alert stream sent to managers/admins when employees trigger events.
+
+7. `announcements` Document ID: `{announcementId}`
+   - Function: Corporate announcements, notices, and policies broadcast to company feed.
+   - Fields:
+     * `title` (string).
+     * `content` (string).
+     * `authorName` (string).
+     * `priority` (string): 'High' | 'Medium' | 'Low'.
+     * `targetDepartment` (string): 'All' or specific department.
+     * `timestamp` (timestamp).
+
+8. `tasks` Document ID: `{taskId}`
+   - Function: Employee task allocation and progress tracking.
+   - Fields:
+     * `companyId` (string).
+     * `title` (string).
+     * `description` (string).
+     * `assignedTo` (string): Employee email.
+     * `dueDate` (timestamp).
+     * `status` (string): 'Pending' | 'In Progress' | 'Completed' | 'Overdue'.
+     * `priority` (string): 'High' | 'Medium' | 'Low'.
+
+9. `company_calendar` Document ID: `{eventId}`
+   - Function: Company holidays, mandatory WFH days, and team events.
+
+10. `feed_posts` Document ID: `{postId}`
+    - Function: Social team updates, achievements, and recognition.
+
+C. COLLECTION GROUP QUERIES (Manager & Admin Aggregations)
+To query records across all subcollections of all users efficiently, Firestore Collection Group Indexes are defined in `firestore.indexes.json`:
+- Collection Group `attendance` filtered by `companyId`
+- Collection Group `leave_requests` filtered by `companyId` and `status`
+- Collection Group `overtime_requests` filtered by `companyId`
+- Collection Group `notifications` filtered by `companyId`
+- Collection Group `tasks` filtered by `companyId`
+
+================================================================================
+6. APP FEATURES BREAKDOWN BY ROLE
+================================================================================
+
+A. ADMIN MODULE
+- Dashboard & Overview: Visual charts (`fl_chart`) showing today's attendance percentages, present vs absent counts, pending leave counts, and active WFH counts.
+- Organization Setup: Complete wizard to set company name, office map coordinates, geofence radius slider, shift start/end times, and grace periods.
+- Department Setup: Create departments, assign department managers, set department-specific working rules.
+- Employee Management: Register employees, assign roles ('manager', 'employee'), reset balances, activate/deactivate accounts.
+- Master Approvals Hub: Single interface reviewing shift change requests, department transfers, task extension requests, attendance corrections, and leave applications across all departments.
+
+B. MANAGER MODULE
+- Team Live View: Real-time map view and list showing who is currently checked in, work modes ('office' vs 'wfh'), check-in times, and locations.
+- Approvals Engine:
+  * Review leave requests with one-tap Approve / Reject actions and instant notifications.
+  * Attendance Correction Reviews: Approve manual punch corrections with updated reason logs.
+  * WFH & Late Entry reviews.
+- Task Management: Create tasks, set priority & deadline, assign to individual employees, track progress.
+- Announcement Wizard: Multi-step wizard to create company/department announcements with rich formatting and priority levels.
+- Analytics & Reports: Weekly/Monthly attendance trend charts, absence statistics, overtime reports, top punctual employees leaderboards.
+
+C. EMPLOYEE MODULE
+- Check-In / Check-Out Slider: Smooth interactive `SlideAction` check-in button with live distance display ("12m from Office (GPS ±5m)").
+- Attendance Tab & Sub-tabs:
+  * Overview Tab: Live shift status, timer counter, punch logs, work mode status.
+  * History & Calendar: Interactive `TableCalendar` with color-coded day indicators (Green: Present, Red: Absent, Yellow: Late/Half-day, Blue: Leave).
+  * Requests Tab: View status of active requests.
+  * Analytics Tab: Personal monthly working hours breakdown and punctuality stats.
+- Apply Leave Screen: Form with date range picker, leave type selector (Annual, Sick, Casual, Comp Off), auto-calculated day duration, and reason text area.
+- Attendance Correction Screen: Submit correction requests for missed check-ins or system issues with reason details.
+- Team Workspace: Team member directory, shared announcements feed, assigned tasks list, and achievements showcase.
+
+================================================================================
+7. NOTIFICATION & REAL-TIME SYNC SERVICES
+================================================================================
+Files involved: `lib/utils/notification_service.dart`, `lib/utils/notification_helper.dart`, `lib/utils/onesignal_helper.dart`
+
+Multi-Layer Notification System:
+1. Firebase Cloud Messaging (FCM): Background message handler (`_firebaseMessagingBackgroundHandler`) processes silent alerts when app is minimized or closed.
+2. OneSignal Integration:
+   - `OneSignal.login(sanitizedEmail)` tags every user by their email ID.
+   - Adds custom tags: `OneSignal.User.addTagWithKey('role', role)` and `companyId`.
+   - Allows targeted push messages to specific roles (e.g. notify all managers when a leave is submitted).
+3. Local Notifications (`flutter_local_notifications`): Displays heads-up banner notifications while app is in foreground.
+4. Scheduled Shift Reminders: Calculates shift end time (`AppSession().shiftEndTime`) and schedules local zoned notifications reminding employees to check out.
+5. Firestore Snapshot Listeners: Real-time Firestore stream listeners (`snapshots()`) monitor incoming records in `/notifications` subcollections to update in-app badge counts dynamically.
+
+================================================================================
+8. SECURITY RULES & ACCESS CONTROL POLICIES
+================================================================================
+File involved: `firestore.rules`
+
+Key Rule Enforcement Mechanisms:
+- `isSignedIn()`: Guarantees request originates from an authenticated user.
+- `getApprovedUser()`: Fetches `/approved_users/{email}` helper to determine user's validated tenant (`companyId`) and role.
+- Tenant Isolation Helper: `userCompanyId()` enforces that users can ONLY query documents where `companyId == request.auth.companyId`.
+- Ownership Check: `isOwner(employeeId)` verifies that an employee can only read/write their own subcollections (attendance, leave requests).
+- Manager Privileges: `isManager()` grants managers read/write access across all subcollections belonging to users of the same `companyId`.
+- Collection Group Security: Rules for `/{path=**}/records/{recordId}` and `/{path=**}/attendance/{docId}` explicitly enforce tenant isolation during collection group queries.
+
+================================================================================
+9. FILE EXPORT & DATA REPORTING ARCHITECTURE
+================================================================================
+Files involved: `lib/utils/file_export_helper.dart`, `lib/utils/file_export_helper_mobile.dart`, `lib/utils/file_export_helper_web.dart`
+
+Reporting Capabilities:
+- CSV Export Engine: Uses `csv` package to convert attendance records, leave summaries, and overtime logs into formatted CSV streams.
+- Cross-Platform File Downloader Bridge:
+  * Web (`file_export_helper_web.dart`): Creates an in-memory Blob URL link and programmatically triggers HTML anchor download in browser.
+  * Mobile/Desktop (`file_export_helper_mobile.dart`): Saves files locally using `path_provider` and opens system share dialog via `share_plus`.

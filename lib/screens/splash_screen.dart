@@ -1,10 +1,9 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:attendance_app/screens/login_screen.dart';
 import 'package:attendance_app/screens/auth_wrapper.dart';
-import 'package:attendance_app/screens/admin_dashboard_screen.dart';
-import 'package:attendance_app/screens/employee/employee_main_screen.dart';
-import 'package:attendance_app/features/manager_main_screen.dart';
+import 'package:attendance_app/screens/unified_dashboard_screen.dart';
+
 import 'package:attendance_app/theme/app_theme.dart';
 import 'package:attendance_app/widgets/animated_mesh_gradient.dart';
 import 'package:attendance_app/utils/app_session.dart';
@@ -44,161 +43,13 @@ class _SplashScreenState extends State<SplashScreen>
     _controller.forward().then((_) => _checkAuthAndNavigate());
   }
 
-  /// After splash animation completes, decide where to go.
+  /// After splash animation completes, defer to AuthWrapper
   Future<void> _checkAuthAndNavigate() async {
-    final currentUser = FirebaseAuth.instance.currentUser;
-
-    // No logged-in user â†’ show login
-    if (currentUser == null) {
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const AuthWrapper()),
-        );
-      }
-      return;
-    }
-
-    // Reload token to ensure it's still valid
-    try {
-      await currentUser.reload();
-    } catch (_) {
-      // Token invalid / user deleted â†’ go to login
-      await FirebaseAuth.instance.signOut();
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const AuthWrapper()),
-        );
-      }
-      return;
-    }
-
-    final email = currentUser.email?.toLowerCase() ?? '';
-
-    try {
-      // Restore role & companyId from approved_users
-      String? role;
-      String? companyId;
-
-      final approvedDoc =
-          await FirestoreService.approvedUserDoc(email).get();
-      if (approvedDoc.exists && approvedDoc.data() != null) {
-        final d = approvedDoc.data()!;
-        role = (d['role'] as String? ?? 'employee').toLowerCase();
-        companyId = d['companyId'] as String? ?? '';
-      } else {
-        // Fallback: check companies collection for manager
-        final companySearch =
-            await FirestoreService.findCompanyByManagerEmail(email);
-        if (companySearch.docs.isNotEmpty) {
-          role = 'manager';
-          companyId = companySearch.docs.first.id;
-        }
-      }
-
-      if (role == null || companyId == null || companyId.isEmpty) {
-        throw Exception('User record not found.');
-      }
-
-      // Restore company details
-      double? officeLat;
-      double? officeLng;
-      double? allowedRadius;
-      String? companyName;
-      String? shiftStartTime;
-      String? shiftEndTime;
-      int? gracePeriod;
-      int? paidLeavesPerYear;
-
-      final companyDoc =
-          await FirestoreService.companyDoc(companyId).get();
-      if (companyDoc.exists && companyDoc.data() != null) {
-        final d = companyDoc.data()!;
-        final companyStatus =
-            (d['status'] as String? ?? 'pending').trim().toLowerCase();
-        if (companyStatus != 'approved' && companyStatus != 'active') {
-          throw Exception('Company access blocked.');
-        }
-        companyName = d['companyName'] as String?;
-        shiftStartTime = d['shiftStartTime'] as String?;
-        shiftEndTime = d['shiftEndTime'] as String?;
-        gracePeriod = (d['gracePeriod'] as num?)?.toInt();
-        paidLeavesPerYear = (d['paidLeavesPerYear'] as num?)?.toInt();
-        final loc = d['location'] as Map<String, dynamic>?;
-        if (loc != null) {
-          final lat = loc['latitude'];
-          final lng = loc['longitude'];
-          officeLat = lat is String
-              ? double.tryParse(lat)
-              : (lat as num?)?.toDouble();
-          officeLng = lng is String
-              ? double.tryParse(lng)
-              : (lng as num?)?.toDouble();
-        }
-        allowedRadius = (d['allowedRadius'] as num?)?.toDouble();
-      }
-
-      // Restore user name
-      String? userName;
-      try {
-        final userDoc =
-            await FirestoreService.userDocByEmail(email).get();
-        userName = userDoc.data()?['name'] as String?;
-        if (userName == null || userName.trim().isEmpty) {
-          final q = await FirestoreService.usersCol
-              .where('email', isEqualTo: email)
-              .limit(1)
-              .get();
-          if (q.docs.isNotEmpty) {
-            userName = q.docs.first.data()['name'] as String?;
-          }
-        }
-      } catch (_) {
-        userName = currentUser.displayName;
-      }
-
-      // Populate session
-      AppSession().populate(
-        uid: currentUser.uid,
-        email: email,
-        role: role,
-        companyId: companyId,
-        companyName: companyName,
-        officeLat: officeLat,
-        officeLng: officeLng,
-        allowedRadius: allowedRadius,
-        shiftStartTime: shiftStartTime,
-        shiftEndTime: shiftEndTime,
-        gracePeriod: gracePeriod,
-        paidLeavesPerYear: paidLeavesPerYear,
-      );
-      if (userName != null && userName.trim().isNotEmpty) {
-        AppSession().userName = userName;
-      }
-
-      if (!mounted) return;
+    if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (_) {
-            if (role == 'admin') return const AdminDashboardScreen();
-            if (role == 'manager') return const ManagerMainScreen();
-            return const EmployeeMainScreen();
-          },
-        ),
+        MaterialPageRoute(builder: (_) => const AuthWrapper()),
       );
-    } catch (e) {
-      debugPrint('Auto-login failed: $e');
-      // Session restore failed â€” sign out and show login
-      await FirebaseAuth.instance.signOut();
-      AppSession().clear();
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const AuthWrapper()),
-        );
-      }
     }
   }
 

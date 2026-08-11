@@ -99,15 +99,17 @@ class _UniversalMoreTabState extends State<UniversalMoreTab> {
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployeeNotificationsScreen())),
                     ),
                     const SizedBox(height: 12),
-                    _buildMenuItem(
-                      icon: Icons.description_outlined,
-                      title: 'Documents',
-                      subtitle: 'Policies, slips & certificates',
-                      iconColor: const Color(0xFF6366F1),
-                      iconBgColor: const Color(0xFFEEF2FF),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployeeDocumentsScreen())),
-                    ),
-                    const SizedBox(height: 12),
+                    if (AppSession().hasPermission('documents')) ...[
+                      _buildMenuItem(
+                        icon: Icons.description_outlined,
+                        title: 'Documents',
+                        subtitle: 'Policies, slips & certificates',
+                        iconColor: const Color(0xFF6366F1),
+                        iconBgColor: const Color(0xFFEEF2FF),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployeeDocumentsScreen())),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     _buildMenuItem(
                       icon: Icons.history_rounded,
                       title: 'History',
@@ -117,24 +119,29 @@ class _UniversalMoreTabState extends State<UniversalMoreTab> {
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployeeHistoryScreen())),
                     ),
                     const SizedBox(height: 12),
-                    _buildMenuItem(
-                      icon: Icons.adjust,
-                      title: 'Settings',
-                      subtitle: 'Appearance, privacy & security',
-                      iconColor: const Color(0xFF7C3AED),
-                      iconBgColor: const Color(0xFFF5F3FF),
-                      onTap: () => _showComingSoon('Settings'),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildMenuItem(
-                      icon: Icons.info_outline,
-                      title: 'Help & Support',
-                      subtitle: 'FAQs, contact HR & tickets',
-                      iconColor: const Color(0xFFDC2626),
-                      iconBgColor: const Color(0xFFFEF2F2),
-                      onTap: () => _showComingSoon('Help & Support'),
-                    ),
-                    const SizedBox(height: 24),
+                    if (AppSession().hasPermission('settings')) ...[
+                      _buildMenuItem(
+                        icon: Icons.adjust,
+                        title: 'Settings',
+                        subtitle: 'Appearance, privacy & security',
+                        iconColor: const Color(0xFF7C3AED),
+                        iconBgColor: const Color(0xFFF5F3FF),
+                        onTap: () => _showComingSoon('Settings'),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    if (AppSession().hasPermission('support')) ...[
+                      _buildMenuItem(
+                        icon: Icons.info_outline,
+                        title: 'Help & Support',
+                        subtitle: 'FAQs, contact HR & tickets',
+                        iconColor: const Color(0xFFDC2626),
+                        iconBgColor: const Color(0xFFFEF2F2),
+                        onTap: () => _showComingSoon('Help & Support'),
+                      ),
+                      const SizedBox(height: 24),
+                    ] else
+                      const SizedBox(height: 12),
 
                     // Sign Out Button
                     SizedBox(

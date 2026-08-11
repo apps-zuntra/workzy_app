@@ -152,17 +152,17 @@ class FirestoreService {
 
   /// All attendance records for the current company via collection group query.
   static Query<Map<String, dynamic>> get allAttendanceRecordsCol {
-    return _db.collectionGroup('attendance').where('companyId', isEqualTo: _cid);
+    return _db.collectionGroup('attendance');
   }
 
   /// All leave requests for the current company via collection group query.
   static Query<Map<String, dynamic>> get allLeaveRequestsQuery {
-    return _db.collectionGroup('leave_requests').where('companyId', isEqualTo: _cid);
+    return _db.collectionGroup('leave_requests');
   }
 
   /// All overtime requests for the current company via collection group query.
   static Query<Map<String, dynamic>> get allOvertimeRequestsQuery {
-    return _db.collectionGroup('overtime_requests').where('companyId', isEqualTo: _cid);
+    return _db.collectionGroup('overtime_requests');
   }
 
   /// All attendance corrections for the current company via collection group query (if sub-collections) or flat

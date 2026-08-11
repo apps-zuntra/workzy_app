@@ -32,16 +32,17 @@ import 'package:attendance_app/screens/attendance/attendance_screen.dart';
 import 'package:attendance_app/screens/attendance/admin_attendance_screen.dart';
 import 'package:attendance_app/features/leave_management/screens/admin/admin_leave_screen.dart';
 import 'package:attendance_app/features/leave_management/screens/admin/admin_leave_tab.dart';
+import 'package:attendance_app/features/leave_management/screens/shared/universal_leave_tab.dart';
 import 'package:attendance_app/screens/more/universal_more_tab.dart';
 
-class AdminDashboardScreen extends StatefulWidget {
-  const AdminDashboardScreen({super.key});
+class UnifiedDashboardScreen extends StatefulWidget {
+  const UnifiedDashboardScreen({super.key});
 
   @override
-  State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
+  State<UnifiedDashboardScreen> createState() => _UnifiedDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
   final user = FirebaseAuth.instance.currentUser;
   late final Stream<DocumentSnapshot> _currentUserStream =
       FirestoreService.userStreamByEmail(user?.email ?? '');
@@ -75,6 +76,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late final Stream<List<Map<String, dynamic>>> _recentActivityStream;
   late final Stream<QuerySnapshot> _allTasksStream;
   late final Stream<QuerySnapshot> _employeesStream;
+  late final Stream<QuerySnapshot> _myAttendanceStream;
 
   // Internal subscriptions for stored streams
   StreamSubscription? _subPendingLeaves,
@@ -95,7 +97,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void initState() {
     super.initState();
     orgId = AppSession().companyId ?? '';
-    _orgUsersStream = FirestoreService.orgMembersCol(orgId).snapshots();
+    _orgUsersStream = FirestoreService.employeesCol.snapshots();
     final userEmail = user?.email ?? '';
     _todayRef = FirestoreService.userAttendanceCol(userEmail);
     _todayAttendanceStream = _todayRef.doc(_getAttendanceDocId()).snapshots();
@@ -285,10 +287,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
 
     _subPendingLeaves = FirestoreService.allLeaveRequestsQuery
-        .where('status', isEqualTo: 'pending')
         .snapshots()
         .listen((s) {
-      leavePending = s.docs.length;
+      leavePending = s.docs.where((d) {
+        final data = d.data() as Map;
+        return data['status'] == 'pending' && data['companyId'] == orgId;
+      }).length;
       emitPending();
     }, onError: (_) {});
     _subPendingAtt = FirestoreService.allAttendanceCorrectionsQuery
@@ -367,14 +371,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     _subStatsAtt =
         FirestoreService.allAttendanceRecordsCol.snapshots().listen((snap) {
-      statAttDocs = snap.docs;
+      statAttDocs = snap.docs.where((d) => (d.data() as Map)['companyId'] == orgId).toList();
       emitStats();
     }, onError: (_) {});
     _subStatsLeaves = FirestoreService.allLeaveRequestsQuery
-        .where('status', isEqualTo: 'approved')
         .snapshots()
         .listen((snap) {
-      statLeaveDocs = snap.docs;
+      statLeaveDocs = snap.docs.where((d) {
+        final data = d.data() as Map;
+        return data['status'] == 'approved' && data['companyId'] == orgId;
+      }).toList();
       emitStats();
     }, onError: (_) {});
 
@@ -385,10 +391,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         StreamController<List<Map<String, dynamic>>>.broadcast();
     List<Map<String, dynamic>> actLeaves = [];
     List<Map<String, dynamic>> actAtts = [];
+    List<Map<String, dynamic>> actEmployees = [];
 
     void emitActivity() {
       if (activityController.isClosed) return;
-      final combined = [...actLeaves, ...actAtts];
+      final combined = [...actLeaves, ...actAtts, ...actEmployees];
       combined.sort((a, b) {
         final ta = a['_ts'] as DateTime?;
         final tb = b['_ts'] as DateTime?;
@@ -404,7 +411,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         .limit(20)
         .snapshots()
         .listen((snap) {
-      actLeaves = snap.docs.map((doc) {
+      final validDocs = snap.docs.where((d) => (d.data() as Map)['companyId'] == orgId);
+      actLeaves = validDocs.map((doc) {
         final d = doc.data() as Map<String, dynamic>;
         final ts = d['createdAt'] as Timestamp?;
         final name = d['userName'] ?? d['empName'] ?? 'Employee';
@@ -468,8 +476,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _allTasksStream = FirestoreService.allTasksQuery.snapshots();
     _employeesStream = FirestoreService.employeesCol.snapshots();
 
+    final userEmail = AppSession().email ?? '';
+    _myAttendanceStream = FirestoreService.userAttendanceCol(userEmail).snapshots();
+
     _subEmployeesMap = _employeesStream.listen((snap) {
       final newMap = <String, Map<String, dynamic>>{};
+      
+      final now = DateTime.now();
+      final oneWeekAgo = now.subtract(const Duration(days: 7));
+      actEmployees.clear();
+      
       for (final d in snap.docs) {
         final ed = d.data() as Map<String, dynamic>? ?? {};
         final docId = d.id.toLowerCase();
@@ -478,10 +494,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         if (ed['userEmail'] != null) newMap[ed['userEmail'].toString().toLowerCase()] = ed;
         if (ed['userId'] != null) newMap[ed['userId'].toString().toLowerCase()] = ed;
         if (ed['uid'] != null) newMap[ed['uid'].toString().toLowerCase()] = ed;
+
+        final createdAtTs = ed['createdAt'] ?? ed['joinedDate'];
+        DateTime? createdAt;
+        if (createdAtTs is Timestamp) {
+          createdAt = createdAtTs.toDate();
+        } else if (createdAtTs is String) {
+          createdAt = DateTime.tryParse(createdAtTs);
+        }
+        
+        if (createdAt != null && createdAt.isAfter(oneWeekAgo)) {
+          final name = ed['name'] ?? ed['userName'] ?? 'New Employee';
+          actEmployees.add({
+            '_ts': createdAt,
+            'text': '$name joined the team',
+            'icon': Icons.person_add_alt_1_rounded,
+            'color': const Color(0xFF3B82F6),
+            'bg': const Color(0xFFEFF6FF),
+          });
+        }
       }
       if (mounted) {
         setState(() => _empMap = newMap);
       }
+      emitActivity();
     }, onError: (_) {});
   }
 
@@ -517,7 +553,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
 
     _subLeaves = FirestoreService.allLeaveRequestsQuery.snapshots().listen((s) {
-      leaves = s.docs;
+      leaves = s.docs.where((d) {
+        final data = d.data() as Map;
+        return data['companyId'] == orgId;
+      }).toList();
       update();
     }, onError: (_) {});
     _subAtt =
@@ -630,8 +669,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ],
             ),
           ),
-          const AdminAttendanceScreen(),
-          const AdminLeaveScreen(),
+          AppSession().hasPermission('approve-attendance') ? const AdminAttendanceScreen() : const AttendanceScreen(),
+          AppSession().hasPermission('approve-leave') ? const AdminLeaveScreen() : const UniversalLeaveTab(),
           const UniversalMoreTab(),
         ],
       ),
@@ -675,7 +714,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'HR Admin - ${DateFormat('EEEE, d MMMM yyyy').format(DateTime.now())}',
+                      '${(AppSession().role ?? 'Employee').toUpperCase()} - ${DateFormat('EEEE, d MMMM yyyy').format(DateTime.now())}',
                       style: const TextStyle(
                         fontSize: 11,
                         color: Color(0xFF6B7280),
@@ -810,15 +849,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildTopNavigation() {
+    final List<Widget> tabs = [_buildTopTab('My Space', 0)];
+    if (AppSession().hasPermission('team')) {
+      tabs.add(_buildTopTab('Team', 1));
+    }
+    if (AppSession().hasPermission('organization')) {
+      tabs.add(_buildTopTab('Organization', 2));
+    }
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
-        children: [
-          _buildTopTab('My Space', 0),
-          _buildTopTab('Team', 1),
-          _buildTopTab('Organization', 2),
-        ],
+        children: tabs,
       ),
     );
   }
@@ -866,11 +909,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ? Row(
                 children: [
                   _buildSubTab('Dashboard', 0),
-                  _buildSubTab('Approvals', 1),
-                  _buildSubTab('Leave', 2),
-                  _buildSubTab('Announcements', 3),
-                  _buildSubTab('Calendar', 4),
-                  _buildSubTab('Tasks', 5),
+                  if (AppSession().hasPermission('approvals')) _buildSubTab('Approvals', 1),
+                  if (AppSession().hasPermission('dashboard-leave')) _buildSubTab('Leave', 2),
+                  if (AppSession().hasPermission('announcements')) _buildSubTab('Announcements', 3),
+                  if (AppSession().hasPermission('calendar')) _buildSubTab('Calendar', 4),
+                  if (AppSession().hasPermission('tasks')) _buildSubTab('Tasks', 5),
                 ],
               )
             : _selectedMainTab == 1
@@ -878,9 +921,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     children: [
                       _buildSubTab('Members', 0),
                       _buildSubTab('Feed', 1),
-                      _buildSubTab('Announcements', 2),
-                      _buildSubTab('Task', 3),
-                      _buildSubTab('Department', 4),
+                      if (AppSession().hasPermission('announcements')) _buildSubTab('Announcements', 2),
+                      if (AppSession().hasPermission('tasks')) _buildSubTab('Task', 3),
+                      if (AppSession().hasPermission('organization')) _buildSubTab('Department', 4),
                     ],
                   )
                 : _selectedMainTab == 2
@@ -888,8 +931,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         children: [
                           _buildSubTab('Overview', 0),
                           _buildSubTab('Policies', 1),
-                          _buildSubTab('Announcements', 2),
-                          _buildSubTab('Reports', 3),
+                          if (AppSession().hasPermission('announcements')) _buildSubTab('Announcements', 2),
+                          if (AppSession().hasPermission('reports')) _buildSubTab('Reports', 3),
                         ],
                       )
                     : const SizedBox(),
@@ -2075,7 +2118,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'MONTHLY ATTENDANCE ” ${DateFormat('MMMM yyyy').format(DateTime.now()).toUpperCase()}',
+            'MONTHLY ATTENDANCE – ${DateFormat('MMMM yyyy').format(DateTime.now()).toUpperCase()}',
             style: const TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w800,
@@ -2086,7 +2129,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           Row(
             children: [
               _buildLegendItem(
-                  const Color(0xFF1D4ED8), 'â‰¥9 hrs'), // Dark Blue
+                  const Color(0xFF1D4ED8), '≥9 hrs'), // Dark Blue
               const SizedBox(width: 16),
               _buildLegendItem(
                   const Color(0xFFF59E0B), 'Late (<9 hrs)'), // Orange
@@ -2097,87 +2140,106 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(height: 24),
           SizedBox(
             height: 120,
-            child: BarChart(
-              BarChartData(
-                alignment: BarChartAlignment.spaceAround,
-                maxY: 10,
-                barTouchData: BarTouchData(enabled: false),
-                titlesData: FlTitlesData(
-                  show: true,
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (double value, TitleMeta meta) {
-                        const style =
-                            TextStyle(color: Color(0xFF9CA3AF), fontSize: 10);
-                        String text = '';
-                        switch (value.toInt()) {
-                          case 0:
-                            text = '1';
-                            break;
-                          case 3:
-                            text = '4';
-                            break;
-                          case 6:
-                            text = '7';
-                            break;
-                          case 9:
-                            text = '10';
-                            break;
-                          case 12:
-                            text = '13';
-                            break;
-                        }
-                        return SideTitleWidget(
-                            axisSide: meta.axisSide,
-                            child: Text(text, style: style));
-                      },
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _myAttendanceStream,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(child: Text('Error loading chart', style: TextStyle(fontSize: 10, color: Colors.red)));
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final now = DateTime.now();
+                final currentYear = now.year;
+                final currentMonth = now.month;
+
+                // Filter locally by current year and month
+                final docs = snapshot.data?.docs.where((doc) {
+                  final parts = doc.id.split('-');
+                  if (parts.length == 3) {
+                    return int.tryParse(parts[0]) == currentYear && int.tryParse(parts[1]) == currentMonth;
+                  }
+                  return false;
+                }).toList() ?? [];
+
+                final Map<int, double> hoursByDay = {};
+                for (var doc in docs) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final dateStr = doc.id; // 'yyyy-MM-dd'
+                  try {
+                    final day = int.parse(dateStr.split('-')[2]);
+                    final totalHours = (data['totalHours'] ?? 0).toDouble();
+                    hoursByDay[day] = totalHours;
+                  } catch (e) {}
+                }
+
+                final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+                final List<BarChartGroupData> barGroups = [];
+
+                for (int i = 1; i <= daysInMonth; i++) {
+                  final hours = hoursByDay[i] ?? 0.0;
+                  Color color = Colors.transparent;
+                  if (hours >= 9.0) {
+                    color = const Color(0xFF1D4ED8);
+                  } else if (hours > 0) {
+                    color = const Color(0xFFF59E0B);
+                  }
+                  barGroups.add(_makeBarGroup(i - 1, hours > 10 ? 10 : hours, color));
+                }
+
+                return BarChart(
+                  BarChartData(
+                    alignment: BarChartAlignment.spaceAround,
+                    maxY: 10,
+                    barTouchData: BarTouchData(enabled: false),
+                    titlesData: FlTitlesData(
+                      show: true,
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          getTitlesWidget: (double value, TitleMeta meta) {
+                            final day = value.toInt() + 1;
+                            if (day % 5 != 1 && day != daysInMonth) return const SizedBox.shrink(); // Show 1, 6, 11...
+                            return SideTitleWidget(
+                                axisSide: meta.axisSide,
+                                child: Text(day.toString(), style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 10)));
+                          },
+                        ),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 20,
+                          interval: 3,
+                          getTitlesWidget: (value, meta) {
+                            return Text(value.toInt().toString(),
+                                style: const TextStyle(
+                                    color: Color(0xFF9CA3AF), fontSize: 10));
+                          },
+                        ),
+                      ),
+                      topTitles:
+                          AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles:
+                          AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     ),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 20,
-                      interval: 3,
-                      getTitlesWidget: (value, meta) {
-                        return Text(value.toInt().toString(),
-                            style: const TextStyle(
-                                color: Color(0xFF9CA3AF), fontSize: 10));
-                      },
+                    gridData: FlGridData(
+                      show: true,
+                      checkToShowHorizontalLine: (value) => value % 3 == 0,
+                      getDrawingHorizontalLine: (value) => FlLine(
+                          color: const Color(0xFFF3F4F6),
+                          strokeWidth: 1,
+                          dashArray: [4, 4]),
+                      drawVerticalLine: false,
                     ),
+                    borderData: FlBorderData(show: false),
+                    barGroups: barGroups.isEmpty 
+                        ? [_makeBarGroup(0, 0, Colors.transparent)] 
+                        : barGroups,
                   ),
-                  topTitles:
-                      AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles:
-                      AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                ),
-                gridData: FlGridData(
-                  show: true,
-                  checkToShowHorizontalLine: (value) => value % 3 == 0,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                      color: const Color(0xFFF3F4F6),
-                      strokeWidth: 1,
-                      dashArray: [4, 4]),
-                  drawVerticalLine: false,
-                ),
-                borderData: FlBorderData(show: false),
-                barGroups: [
-                  _makeBarGroup(0, 9.5, const Color(0xFF1D4ED8)),
-                  _makeBarGroup(1, 9, const Color(0xFF1D4ED8)),
-                  _makeBarGroup(2, 8.5, const Color(0xFFF59E0B)),
-                  _makeBarGroup(3, 0, Colors.transparent),
-                  _makeBarGroup(4, 0, Colors.transparent),
-                  _makeBarGroup(5, 9, const Color(0xFF1D4ED8)),
-                  _makeBarGroup(6, 0, Colors.transparent),
-                  _makeBarGroup(7, 9.2, const Color(0xFF1D4ED8)),
-                  _makeBarGroup(8, 9, const Color(0xFF1D4ED8)),
-                  _makeBarGroup(9, 8, const Color(0xFFF59E0B)),
-                  _makeBarGroup(10, 0, Colors.transparent),
-                  _makeBarGroup(11, 9.5, const Color(0xFF1D4ED8)),
-                  _makeBarGroup(12, 9, const Color(0xFF1D4ED8)),
-                  _makeBarGroup(13, 8.2, const Color(0xFFF59E0B)),
-                ],
-              ),
+                );
+              }
             ),
           ),
         ],
@@ -2496,9 +2558,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         }
 
         final allDocs = snapshot.data?.docs ?? [];
+        final userEmail = FirebaseAuth.instance.currentUser?.email?.toLowerCase();
+        
         final activeDocs = allDocs.where((d) {
-          final s =
-              (d.data() as Map<String, dynamic>)['status'] as String? ?? '';
+          final data = d.data() as Map<String, dynamic>;
+          final s = data['status'] as String? ?? '';
+          
+          final assignedTo = (data['assignedTo'] as String?)?.toLowerCase() ?? '';
+          if (userEmail != null && userEmail.isNotEmpty && assignedTo != userEmail) return false;
+          
           return s == 'assigned' || s == 'in_progress' || s == 'overdue';
         }).toList();
 
@@ -2915,24 +2983,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               _navItem(0, Icons.home_outlined, Icons.home_filled, 'Home'),
               _navItem(
                   1, Icons.access_time, Icons.access_time_filled, 'Attendance'),
-              GestureDetector(
-                onTap: () => setState(() => _isCreatingAnnouncement = true),
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF5C5CFF),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                          color: Color(0x405C5CFF),
-                          blurRadius: 12,
-                          offset: Offset(0, 4))
-                    ],
+              
+              if (AppSession().hasPermission('create-announcement') || AppSession().hasPermission('create-task'))
+                GestureDetector(
+                  onTap: () => setState(() => _isCreatingAnnouncement = true),
+                  child: Container(
+                    width: 48,
+                    height: 48,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF5C5CFF),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                            color: Color(0x405C5CFF),
+                            blurRadius: 12,
+                            offset: Offset(0, 4))
+                      ],
+                    ),
+                    child: const Icon(Icons.add, color: Colors.white, size: 28),
                   ),
-                  child: const Icon(Icons.add, color: Colors.white, size: 28),
-                ),
-              ),
+                )
+              else 
+                const SizedBox(width: 48),
+
               _navItem(2, Icons.calendar_today_outlined, Icons.calendar_today,
                   'Leave'),
               _navItem(3, Icons.more_horiz, Icons.more_horiz, 'More'),

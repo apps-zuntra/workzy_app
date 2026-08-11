@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
@@ -73,7 +73,6 @@ class _EmployeeAnnouncementTabState extends State<EmployeeAnnouncementTab> {
 
   Widget _buildAnnouncementsList() {
     Query query = FirestoreService.announcementsCol
-        .where('audience', isEqualTo: 'all')
         .where('status', isEqualTo: 'published')
         .orderBy('timestamp', descending: true);
         
@@ -93,7 +92,23 @@ class _EmployeeAnnouncementTabState extends State<EmployeeAnnouncementTab> {
           );
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        final rawDocs = snapshot.data?.docs ?? [];
+        final myEmail = (FirebaseAuth.instance.currentUser?.email ?? AppSession().email ?? '').toLowerCase();
+        
+        final docs = rawDocs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final audience = (data['audience'] ?? 'all').toString().toLowerCase();
+          final notifyOthers = (data['notifyOthers'] ?? '').toString().toLowerCase();
+          final List targetEmails = (data['targetEmails'] as List?) ?? [];
+          final List targetTeams = (data['targetTeams'] as List?) ?? [];
+          final myDept = (AppSession().userDepartment ?? '').toString().toLowerCase();
+          
+          if (audience == 'all') return true;
+          if (myDept.isNotEmpty && targetTeams.map((t) => t.toString().toLowerCase()).contains(myDept)) return true;
+          if (notifyOthers.contains(myEmail) || targetEmails.map((e) => e.toString().toLowerCase()).contains(myEmail)) return true;
+          if (AppSession().hasAdminAccess || AppSession().role?.toLowerCase() == 'manager') return true;
+          return false;
+        }).toList();
         
         List<DocumentSnapshot> filteredDocs = docs;
         if (_selectedFilter != 'All') {

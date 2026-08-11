@@ -108,7 +108,7 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
       final body = '$userName applied for $selectedType $dateRangeStr.';
       final extraData = {'employeeEmail': user.email};
 
-      if (senderRole == 'admin') {
+      if (senderRole == 'admin' || senderRole == 'super_admin' || senderRole == 'hr_admin') {
         await NotificationHelper.notifyAdmin(
             title: title,
             body: body,

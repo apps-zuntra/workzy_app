@@ -1,10 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/screens/login_screen.dart';
-import 'package:attendance_app/screens/admin_dashboard_screen.dart';
-import 'package:attendance_app/screens/employee/employee_main_screen.dart';
-import 'package:attendance_app/features/manager_main_screen.dart';
+import 'package:attendance_app/screens/unified_dashboard_screen.dart';
+
 import 'package:attendance_app/utils/app_session.dart';
 import 'package:attendance_app/utils/notification_service.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
@@ -22,6 +22,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
   bool _sessionLoaded = false;
   String? _error;
   late Future<User?> _initialAuthFuture;
+  StreamSubscription<DocumentSnapshot>? _orgSubscription;
+
+  @override
+  void dispose() {
+    _orgSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -184,9 +191,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Widget _navigateToMain() {
-    if (AppSession().role == 'admin') return const AdminDashboardScreen();
-    if (AppSession().role == 'manager') return const ManagerMainScreen();
-    return const EmployeeMainScreen();
+    return const UnifiedDashboardScreen();
   }
 
   Future<void> _loadSession(User user) async {
@@ -209,29 +214,36 @@ class _AuthWrapperState extends State<AuthWrapper> {
       String? companyId;
 
       final approvedDoc = await FirestoreService.approvedUserDoc(email).get();
+      debugPrint('AUTH DEBUG: email=$email, approvedDoc.exists=${approvedDoc.exists}');
+      
       if (approvedDoc.exists && approvedDoc.data() != null) {
         final d = approvedDoc.data()!;
+        debugPrint('AUTH DEBUG: approvedDoc data=$d');
         role = (d['role'] as String? ?? 'employee').toLowerCase();
 
         // NEW: self-registered orgs use 'orgId'; legacy uses 'companyId'
         final orgId = d['orgId'] as String? ?? d['companyId'] as String?;
         companyId = d['companyId'] as String? ?? orgId ?? '';
+        debugPrint('AUTH DEBUG: parsed role=$role, orgId=$orgId, companyId=$companyId');
 
         // ── NEW: Try to load from `organizations` collection first ────────
         if (orgId != null && orgId.isNotEmpty) {
           try {
+            debugPrint('AUTH DEBUG: Attempting to load session from organizations/$orgId');
             await _loadSessionFromOrganizations(user, email, role, orgId);
             return;
           } catch (e) {
-            debugPrint('Failed to load from organizations, falling back to legacy: $e');
+            debugPrint('AUTH DEBUG: Failed to load from organizations, falling back to legacy: $e');
           }
         }
       } else {
         // Fallback: find legacy company by managerEmail field
         final companySearch = await FirestoreService.findCompanyByManagerEmail(email);
+        debugPrint('AUTH DEBUG: legacy companySearch docs count=${companySearch.docs.length}');
         if (companySearch.docs.isNotEmpty) {
           role = 'manager';
           companyId = companySearch.docs.first.id;
+          debugPrint('AUTH DEBUG: found legacy company $companyId for manager');
 
           // Auto-provision manager into approved_users
           try {
@@ -246,9 +258,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
           } catch (e) {
             debugPrint('Manager auto-provisioning warning: $e');
           }
+        } else {
+          // Check if they are in the users collection with an orgId?
+          final userQuery = await FirestoreService.usersCol.where('email', isEqualTo: email).limit(1).get();
+          if (userQuery.docs.isNotEmpty) {
+             debugPrint('AUTH DEBUG: user found in users collection: ${userQuery.docs.first.data()}');
+          }
         }
       }
 
+      debugPrint('AUTH DEBUG: final role=$role, companyId=$companyId');
       if (role == null || companyId == null || companyId.isEmpty) {
         if (mounted) {
           setState(() {
@@ -302,6 +321,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         shiftEndTime: cd['shiftEndTime'] as String?,
         gracePeriod: parseInt(cd['gracePeriod']),
         paidLeavesPerYear: parseInt(cd['paidLeavesPerYear']),
+        featurePermissions: cd['featurePermissions'] as Map<String, dynamic>?,
         userName: userName,
       );
 
@@ -327,8 +347,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Future<void> _loadSessionFromOrganizations(
       User user, String email, String role, String orgId) async {
     try {
-      // Load org master doc
-      final orgDoc = await FirestoreService.orgDoc(orgId).get();
+      // Load org master doc initially
+      final orgDocRef = FirestoreService.orgDoc(orgId);
+      final orgDoc = await orgDocRef.get();
       if (!orgDoc.exists || orgDoc.data() == null) {
         throw Exception('Organization record not found.');
       }
@@ -347,6 +368,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         role: role,
         companyId: orgId,
         companyName: od['companyName'] as String? ?? od['name'] as String?,
+        featurePermissions: od['featurePermissions'] as Map<String, dynamic>?,
         userName: userName,
       );
 
@@ -355,6 +377,20 @@ class _AuthWrapperState extends State<AuthWrapper> {
       if (mounted) {
         setState(() { _sessionLoaded = true; _error = null; });
       }
+
+      // ── Set up real-time listener for permissions ──
+      _orgSubscription?.cancel();
+      _orgSubscription = orgDocRef.snapshots().listen((snapshot) {
+        if (snapshot.exists && snapshot.data() != null) {
+          final liveData = snapshot.data()!;
+          if (liveData.containsKey('featurePermissions')) {
+            AppSession().featurePermissions = liveData['featurePermissions'] as Map<String, dynamic>;
+            if (mounted) {
+              setState(() {}); // Trigger rebuild of UnifiedDashboardScreen
+            }
+          }
+        }
+      });
     } catch (e) {
       debugPrint('_loadSessionFromOrganizations error: $e');
       rethrow;

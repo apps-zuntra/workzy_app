@@ -1,0 +1,557 @@
+================ PAGE USAGE REPORT ================
+Generated on: 2026-08-11 12:16:36.848243
+Total Pages Analyzed: 101
+
+--------------------------------------------------
+UNUSED PAGES (11)
+These files are not imported and their classes are not referenced anywhere.
+--------------------------------------------------
+- File: features/attendance/screens/admin/admin_attendance_tab.dart
+  Classes: AdminAttendanceTab, _AdminAttendanceTabState
+
+- File: features/attendance/screens/manager/attendance_status_detail_screen.dart
+  Classes: AttendanceStatusDetailScreen, _AttendanceStatusDetailScreenState, _BlinkingDot, _BlinkingDotState
+
+- File: features/attendance/screens/manager/manager_attendance_tab.dart
+  Classes: ManagerAttendanceTab, _ManagerAttendanceTabState
+
+- File: features/attendance/screens/manager/manager_calendar_tab.dart
+  Classes: ManagerCalendarTab, _ManagerCalendarTabState, _CalendarActionSheet, _CalendarActionSheetState
+
+- File: features/attendance/screens/manager/manager_home_tab.dart
+  Classes: ManagerHomeTab, _ManagerHomeTabState
+
+- File: features/auth/screens/manager/manager_verify_email_screen.dart
+  Classes: ManagerVerifyEmailScreen, _ManagerVerifyEmailScreenState
+
+- File: features/settings/screens/manager/manager_profile_tab.dart
+  Classes: ManagerProfileTab, _ManagerProfileTabState
+
+- File: screens/employee/home_tab.dart
+  Classes: EmployeeHomeTab, _EmployeeHomeTabState, ShiftDetailsScreen
+
+- File: screens/employee/overtime_tracker_screen.dart
+  Classes: OvertimeTrackerScreen
+
+- File: screens/pre_login_screen.dart
+  Classes: PreLoginScreen, _OverviewStatCard, _FeatureTile
+
+- File: screens/splash_screen.dart
+  Classes: SplashScreen, _SplashScreenState
+
+
+--------------------------------------------------
+USED PAGES (90)
+--------------------------------------------------
+- File: features/attendance/screens/manager/attendance_correction_screen.dart
+  Classes: AttendanceCorrectionScreen, _AttendanceCorrectionScreenState
+  Used by (2):
+    * screens/employee/attendance_tab.dart
+    * screens/employee/employee_attendance_detail_screen.dart
+
+- File: features/attendance/screens/manager/employee_workspace_department_tab.dart
+  Classes: EmployeeWorkspaceDepartmentTab
+  Used by (1):
+    * features/attendance/screens/manager/employee_workspace_screen.dart
+
+- File: features/attendance/screens/manager/employee_workspace_profile_tab.dart
+  Classes: EmployeeWorkspaceProfileTab
+  Used by (1):
+    * features/attendance/screens/manager/employee_workspace_screen.dart
+
+- File: features/attendance/screens/manager/employee_workspace_related_data_tab.dart
+  Classes: EmployeeWorkspaceRelatedDataTab, _EmployeeWorkspaceRelatedDataTabState
+  Used by (1):
+    * features/attendance/screens/manager/employee_workspace_screen.dart
+
+- File: features/attendance/screens/manager/employee_workspace_screen.dart
+  Classes: EmployeeWorkspaceScreen, _EmployeeWorkspaceScreenState
+  Used by (1):
+    * widgets/team_members_view.dart
+
+- File: features/attendance/screens/manager/employees_on_leave_screen.dart
+  Classes: EmployeesOnLeaveScreen, _EmployeesOnLeaveScreenState
+  Used by (1):
+    * features/leave_management/screens/manager/employees_on_leave_screen.dart
+
+- File: features/attendance/screens/manager/late_adjustment_review_screen.dart
+  Classes: LateAdjustmentReviewScreen, _LateAdjustmentReviewScreenState
+  Used by (1):
+    * features/settings/screens/manager/manager_notifications_screen.dart
+
+- File: features/attendance/screens/manager/late_early_exit_screen.dart
+  Classes: LateEarlyExitScreen, _LateEarlyExitScreenState
+  Used by (1):
+    * features/attendance/screens/manager/manager_reports_tab.dart
+
+- File: features/attendance/screens/manager/manager_attendance_detail_screen.dart
+  Classes: ManagerAttendanceDetailScreen, _ManagerAttendanceDetailScreenState
+  Used by (2):
+    * features/attendance/screens/admin/admin_attendance_tab.dart
+    * features/attendance/screens/manager/manager_attendance_tab.dart
+
+- File: features/attendance/screens/manager/manager_reports_tab.dart
+  Classes: ManagerReportsTab, _ManagerReportsTabState
+  Used by (1):
+    * features/settings/screens/manager/manager_profile_tab.dart
+
+- File: features/attendance/screens/manager/manager_request_correction_screen.dart
+  Classes: ManagerRequestCorrectionScreen, _ManagerRequestCorrectionScreenState
+  Used by (1):
+    * features/attendance/screens/manager/manager_attendance_detail_screen.dart
+
+- File: features/attendance/screens/manager/manager_request_submitted_screen.dart
+  Classes: ManagerRequestSubmittedScreen
+  Used by (1):
+    * features/attendance/screens/manager/manager_request_correction_screen.dart
+
+- File: features/attendance/screens/manager/monthly_absence_screen.dart
+  Classes: MonthlyAbsenceScreen, _MonthlyAbsenceScreenState
+  Used by (1):
+    * features/attendance/screens/manager/manager_reports_tab.dart
+
+- File: features/attendance/screens/manager/overtime_report_screen.dart
+  Classes: OvertimeReportScreen, _OvertimeReportScreenState
+  Used by (1):
+    * features/attendance/screens/manager/manager_reports_tab.dart
+
+- File: features/attendance/screens/manager/top_employees_screen.dart
+  Classes: TopEmployeesScreen, _TopEmployeesScreenState
+  Used by (2):
+    * features/attendance/screens/manager/manager_reports_tab.dart
+    * features/employee_management/screens/manager/top_employees_screen.dart
+
+- File: features/auth/screens/manager/manager_create_password_screen.dart
+  Classes: ManagerCreatePasswordScreen, _ManagerCreatePasswordScreenState
+  Used by (1):
+    * features/auth/screens/manager/manager_verify_otp_screen.dart
+
+- File: features/auth/screens/manager/manager_success_password_screen.dart
+  Classes: ManagerSuccessPasswordScreen
+  Used by (1):
+    * features/auth/screens/manager/manager_create_password_screen.dart
+
+- File: features/auth/screens/manager/manager_verify_otp_screen.dart
+  Classes: ManagerVerifyOtpScreen, _ManagerVerifyOtpScreenState
+  Used by (1):
+    * features/auth/screens/manager/manager_verify_email_screen.dart
+
+- File: features/employee_management/screens/manager/add_employee_screen.dart
+  Classes: AddEmployeeScreen, _AddEmployeeScreenState
+  Used by (1):
+    * features/employee_management/screens/manager/employee_list_screen.dart
+
+- File: features/employee_management/screens/manager/employee_detail_screen.dart
+  Classes: EmployeeDetailScreen
+  Used by (2):
+    * features/attendance/screens/manager/attendance_status_detail_screen.dart
+    * features/employee_management/screens/manager/employee_list_screen.dart
+
+- File: features/employee_management/screens/manager/employee_list_screen.dart
+  Classes: EmployeeListScreen, _EmployeeListScreenState
+  Used by (1):
+    * features/settings/screens/manager/manager_profile_tab.dart
+
+- File: features/employee_management/screens/manager/top_employees_screen.dart
+  Classes: TopEmployeesScreen, _FilterChip
+  Used by (2):
+    * features/attendance/screens/manager/manager_reports_tab.dart
+    * features/attendance/screens/manager/top_employees_screen.dart
+
+- File: features/leave_management/screens/admin/admin_leave_screen.dart
+  Classes: AdminLeaveScreen, _AdminLeaveScreenState, _MySpaceLeaveTab, _MySpaceLeaveTabState, _TeamLeaveTab, _TeamLeaveTabState
+  Used by (1):
+    * screens/unified_dashboard_screen.dart
+
+- File: features/leave_management/screens/admin/admin_leave_tab.dart
+  Classes: AdminLeaveTab, _AdminLeaveTabState
+  Used by (1):
+    * screens/unified_dashboard_screen.dart
+
+- File: features/leave_management/screens/manager/employees_on_leave_screen.dart
+  Classes: EmployeesOnLeaveScreen, _EmployeesOnLeaveScreenState
+  Used by (1):
+    * features/attendance/screens/manager/employees_on_leave_screen.dart
+
+- File: features/leave_management/screens/manager/leave_approval_screen.dart
+  Classes: LeaveApprovalScreen, _LeaveApprovalScreenState
+  Used by (2):
+    * features/settings/screens/manager/manager_notifications_screen.dart
+    * features/settings/screens/manager/manager_profile_tab.dart
+
+- File: features/leave_management/screens/manager/leave_detail_screen.dart
+  Classes: LeaveDetailScreen
+  Used by (1):
+    * features/leave_management/screens/manager/leave_approval_screen.dart
+
+- File: features/leave_management/screens/shared/universal_leave_tab.dart
+  Classes: UniversalLeaveTab, _UniversalLeaveTabState
+  Used by (1):
+    * screens/unified_dashboard_screen.dart
+
+- File: features/settings/screens/manager/company_settings_screen.dart
+  Classes: CompanySettingsScreen, _CompanySettingsScreenState
+  Used by (1):
+    * features/settings/screens/manager/manager_profile_tab.dart
+
+- File: features/settings/screens/manager/contact_support_screen.dart
+  Classes: ContactSupportScreen, _ContactSupportScreenState
+  Used by (3):
+    * features/settings/screens/manager/manager_profile_tab.dart
+    * features/settings/screens/manager/privacy_policy_screen.dart
+    * screens/employee/profile_tab.dart
+
+- File: features/settings/screens/manager/manager_edit_profile_screen.dart
+  Classes: ManagerEditProfileScreen, _ManagerEditProfileScreenState
+  Used by (1):
+    * features/settings/screens/manager/manager_profile_tab.dart
+
+- File: features/settings/screens/manager/manager_notifications_screen.dart
+  Classes: ManagerNotificationsScreen, _ManagerNotificationsScreenState, _NotifItem
+  Used by (2):
+    * features/settings/screens/manager/manager_profile_tab.dart
+    * widgets/notification_action.dart
+
+- File: features/settings/screens/manager/privacy_policy_screen.dart
+  Classes: PrivacyPolicyScreen
+  Used by (2):
+    * features/settings/screens/manager/manager_profile_tab.dart
+    * screens/employee/profile_tab.dart
+
+- File: screens/announcement_detail_screen.dart
+  Classes: AnnouncementDetailScreen, _AnnouncementDetailScreenState
+  Used by (1):
+    * widgets/announcements_tab_view.dart
+
+- File: screens/attendance/admin_attendance_screen.dart
+  Classes: AdminAttendanceScreen, _AdminAttendanceScreenState, _TeamAttendanceTab, _TeamAttendanceTabState, _EmpAttInfo, _AnalyticsItem
+  Used by (1):
+    * screens/unified_dashboard_screen.dart
+
+- File: screens/attendance/attendance_analytics_tab.dart
+  Classes: AttendanceAnalyticsTab, _AttendanceAnalyticsTabState, _AnalyticsStats
+  Used by (1):
+    * screens/attendance/attendance_screen.dart
+
+- File: screens/attendance/attendance_correction_form_screen.dart
+  Classes: AttendanceCorrectionFormScreen, _AttendanceCorrectionFormScreenState
+  Used by (2):
+    * screens/attendance/attendance_requests_tab.dart
+    * screens/attendance/attendance_request_detail_screen.dart
+
+- File: screens/attendance/attendance_overview_tab.dart
+  Classes: AttendanceOverviewTab, _AttendanceOverviewTabState
+  Used by (2):
+    * screens/attendance/attendance_screen.dart
+    * screens/employee/attendance_tab.dart
+
+- File: screens/attendance/attendance_request_detail_screen.dart
+  Classes: AttendanceRequestDetailScreen
+  Used by (1):
+    * screens/attendance/attendance_requests_tab.dart
+
+- File: screens/attendance/attendance_requests_tab.dart
+  Classes: AttendanceRequestsTab, _AttendanceRequestsTabState, _RequestItem, _StatusDisplayInfo
+  Used by (1):
+    * screens/attendance/attendance_screen.dart
+
+- File: screens/attendance/attendance_screen.dart
+  Classes: AttendanceScreen, _AttendanceScreenState
+  Used by (2):
+    * screens/attendance/admin_attendance_screen.dart
+    * screens/unified_dashboard_screen.dart
+
+- File: screens/attendance/attendance_summary_tab.dart
+  Classes: AttendanceSummaryTab, _AttendanceSummaryTabState, _StatusInfo
+  Used by (2):
+    * screens/attendance/attendance_screen.dart
+    * screens/employee/employee_attendance_detail_screen.dart
+
+- File: screens/auth_wrapper.dart
+  Classes: AuthWrapper, _AuthWrapperState, LocationRequiredScreen, _LocationRequiredScreenState
+  Used by (8):
+    * features/leave_management/screens/admin/admin_leave_screen.dart
+    * features/settings/screens/manager/manager_profile_tab.dart
+    * main.dart
+    * screens/attendance/admin_attendance_screen.dart
+    * screens/employee/profile_tab.dart
+    * screens/login_screen.dart
+    * screens/splash_screen.dart
+    * screens/unified_dashboard_screen.dart
+
+- File: screens/common/notification_settings_screen.dart
+  Classes: NotificationSettingsScreen, _NotificationSettingsScreenState
+  Used by (1):
+    * screens/employee/profile_tab.dart
+
+- File: screens/common/password_recovery_flow.dart
+  Classes: PasswordRecoveryFlow, _PasswordRecoveryFlowState
+  Used by (4):
+    * features/settings/screens/manager/manager_profile_tab.dart
+    * screens/employee/profile_tab.dart
+    * screens/login_screen.dart
+    * screens/profile_screen.dart
+
+- File: screens/create_announcement_wizard.dart
+  Classes: CreateAnnouncementWizard, _CreateAnnouncementWizardState
+  Used by (3):
+    * features/attendance/screens/manager/manager_home_tab.dart
+    * screens/unified_dashboard_screen.dart
+    * widgets/announcements_tab_view.dart
+
+- File: screens/department_detail_screen.dart
+  Classes: DepartmentDetailScreen, _DepartmentDetailScreenState
+  Used by (1):
+    * widgets/team_departments_view.dart
+
+- File: screens/employee/achievements_screen.dart
+  Classes: AchievementsScreen
+  Used by (1):
+    * screens/employee/profile_tab.dart
+
+- File: screens/employee/all_milestones_screen.dart
+  Classes: AllMilestonesScreen
+  Used by (1):
+    * screens/employee/achievements_screen.dart
+
+- File: screens/employee/analytics_tab/analytics_main_screen.dart
+  Classes: AnalyticsMainScreen, _AnalyticsMainScreenState
+  Used by (1):
+    * screens/employee/attendance_tab.dart
+
+- File: screens/employee/analytics_tab/monthly_summary_screen.dart
+  Classes: MonthlySummaryScreen, _MonthlySummaryScreenState, DateTimeUtils
+  Used by (2):
+    * screens/attendance/attendance_analytics_tab.dart
+    * screens/employee/analytics_tab/analytics_main_screen.dart
+
+- File: screens/employee/analytics_tab/work_hours_breakdown_screen.dart
+  Classes: WorkHoursBreakdownScreen, _WorkHoursBreakdownScreenState, _DayData
+  Used by (1):
+    * screens/employee/analytics_tab/analytics_main_screen.dart
+
+- File: screens/employee/announcement_tab.dart
+  Classes: EmployeeAnnouncementTab, _EmployeeAnnouncementTabState
+  Used by (1):
+    * screens/employee/home_tab.dart
+
+- File: screens/employee/apply_leave_screen.dart
+  Classes: ApplyLeaveScreen, _ApplyLeaveScreenState
+  Used by (2):
+    * features/leave_management/screens/admin/admin_leave_screen.dart
+    * features/leave_management/screens/shared/universal_leave_tab.dart
+
+- File: screens/employee/attendance_history_screen.dart
+  Classes: AttendanceHistoryScreen, _AttendanceHistoryScreenState
+  Used by (3):
+    * features/employee_management/screens/manager/employee_detail_screen.dart
+    * screens/attendance/attendance_overview_tab.dart
+    * screens/employee/notifications_screen.dart
+
+- File: screens/employee/attendance_tab.dart
+  Classes: EmployeeAttendanceTab, _EmployeeAttendanceTabState, _DayDetailSheet, _DayDetailSheetState
+  Used by (1):
+    * screens/employee/home_tab.dart
+
+- File: screens/employee/daily_summary_screen.dart
+  Classes: DailySummaryScreen, _DailySummaryScreenState
+  Used by (1):
+    * screens/employee/home_tab.dart
+
+- File: screens/employee/documents_screen.dart
+  Classes: EmployeeDocumentsScreen, _EmployeeDocumentsScreenState
+  Used by (1):
+    * screens/more/universal_more_tab.dart
+
+- File: screens/employee/employee_attendance_correction_screen.dart
+  Classes: EmployeeAttendanceCorrectionScreen, _EmployeeAttendanceCorrectionScreenState
+  Used by (2):
+    * screens/employee/attendance_tab.dart
+    * screens/employee/employee_attendance_detail_screen.dart
+
+- File: screens/employee/employee_attendance_detail_screen.dart
+  Classes: EmployeeAttendanceDetailScreen, _EmployeeAttendanceDetailScreenState, _StatusInfo
+  Used by (5):
+    * screens/attendance/attendance_overview_tab.dart
+    * screens/attendance/attendance_summary_tab.dart
+    * screens/employee/attendance_tab.dart
+    * screens/employee/employee_attendance_overview_tab.dart
+    * screens/employee/employee_attendance_summary_screen.dart
+
+- File: screens/employee/employee_attendance_overview_tab.dart
+  Classes: EmployeeAttendanceOverviewTab, _EmployeeAttendanceOverviewTabState
+  Used by (1):
+    * screens/employee/attendance_tab.dart
+
+- File: screens/employee/employee_attendance_summary_screen.dart
+  Classes: EmployeeAttendanceSummaryScreen, _EmployeeAttendanceSummaryScreenState, _StatBox, _WeekDayRow
+  Used by (1):
+    * screens/employee/home_tab.dart
+
+- File: screens/employee/employee_calendar_tab.dart
+  Classes: EmployeeCalendarTab, _EmployeeCalendarTabState
+  Used by (1):
+    * screens/employee/home_tab.dart
+
+- File: screens/employee/employee_feed_tab.dart
+  Classes: EmployeeFeedTab, _EmployeeFeedTabState
+  Used by (1):
+    * screens/employee/home_tab.dart
+
+- File: screens/employee/employee_leave_summary_screen.dart
+  Classes: EmployeeLeaveSummaryScreen, _EmployeeLeaveSummaryScreenState
+  Used by (1):
+    * screens/employee/home_tab.dart
+
+- File: screens/employee/employee_profile_screen.dart
+  Classes: EmployeeProfileScreen
+  Used by (1):
+    * screens/employee/employee_team_members_tab.dart
+
+- File: screens/employee/employee_team_announcements_tab.dart
+  Classes: EmployeeTeamAnnouncementsTab, _EmployeeTeamAnnouncementsTabState
+  Used by (1):
+    * screens/employee/home_tab.dart
+
+- File: screens/employee/employee_team_members_tab.dart
+  Classes: EmployeeTeamMembersTab, _EmployeeTeamMembersTabState
+  Used by (1):
+    * screens/employee/home_tab.dart
+
+- File: screens/employee/employee_team_tasks_tab.dart
+  Classes: EmployeeTeamTasksTab, _EmployeeTeamTasksTabState
+  Used by (1):
+    * screens/employee/home_tab.dart
+
+- File: screens/employee/history_screen.dart
+  Classes: EmployeeHistoryScreen, _EmployeeHistoryScreenState, _TasksTab, _TasksTabState, _RequestsTab, _RequestsTabState
+  Used by (4):
+    * features/employee_management/screens/manager/employee_detail_screen.dart
+    * screens/attendance/attendance_overview_tab.dart
+    * screens/employee/notifications_screen.dart
+    * screens/more/universal_more_tab.dart
+
+- File: screens/employee/leave_tab.dart
+  Classes: EmployeeLeaveTab, _EmployeeLeaveTabState
+  Used by (2):
+    * screens/employee/notifications_screen.dart
+    * screens/unified_dashboard_screen.dart
+
+- File: screens/employee/notifications_screen.dart
+  Classes: EmployeeNotificationsScreen, _EmployeeNotificationsScreenState
+  Used by (5):
+    * features/settings/screens/manager/manager_profile_tab.dart
+    * screens/employee/home_tab.dart
+    * screens/employee/profile_tab.dart
+    * screens/more/universal_more_tab.dart
+    * widgets/notification_action.dart
+
+- File: screens/employee/personal_details_screen.dart
+  Classes: PersonalDetailsScreen, _PersonalDetailsScreenState
+  Used by (1):
+    * screens/employee/profile_tab.dart
+
+- File: screens/employee/profile_tab.dart
+  Classes: EmployeeProfileTab, _EmployeeProfileTabState
+  Used by (1):
+    * features/attendance/screens/manager/employee_workspace_screen.dart
+
+- File: screens/employee/requests_tab/request_correction_form.dart
+  Classes: RequestCorrectionForm, _RequestCorrectionFormState, _NextStep
+  Used by (2):
+    * screens/employee/requests_tab/requests_main_screen.dart
+    * screens/employee/requests_tab/request_detail_screen.dart
+
+- File: screens/employee/requests_tab/request_detail_screen.dart
+  Classes: RequestDetailScreen, _DetailRow, _ApprovalStep, _StatusBadge
+  Used by (2):
+    * screens/attendance/attendance_requests_tab.dart
+    * screens/employee/requests_tab/requests_main_screen.dart
+
+- File: screens/employee/requests_tab/requests_main_screen.dart
+  Classes: RequestsMainScreen, _RequestsMainScreenState, _RequestCard, _InfoRow, _StatusBadge, _SheetTile
+  Used by (2):
+    * screens/employee/attendance_tab.dart
+    * screens/employee/requests_tab/request_detail_screen.dart
+
+- File: screens/employee/task_detail_screen.dart
+  Classes: TaskDetailScreen, _TaskDetailScreenState
+  Used by (1):
+    * screens/employee/employee_team_tasks_tab.dart
+
+- File: screens/employee_profile_detail_screen.dart
+  Classes: EmployeeProfileDetailScreen
+  Used by (1):
+    * screens/department_detail_screen.dart
+
+- File: screens/employee_tasks_detail_screen.dart
+  Classes: EmployeeTasksDetailScreen, _EmployeeTasksDetailScreenState
+  Used by (1):
+    * widgets/team_tasks_view.dart
+
+- File: screens/login_screen.dart
+  Classes: LoginScreen, _LoginScreenState
+  Used by (9):
+    * features/auth/screens/manager/manager_create_password_screen.dart
+    * features/settings/screens/manager/manager_profile_tab.dart
+    * main.dart
+    * screens/auth_wrapper.dart
+    * screens/employee/home_tab.dart
+    * screens/employee/profile_tab.dart
+    * screens/more/universal_more_tab.dart
+    * screens/pre_login_screen.dart
+    * screens/splash_screen.dart
+
+- File: screens/more/universal_more_tab.dart
+  Classes: UniversalMoreTab, _UniversalMoreTabState
+  Used by (1):
+    * screens/unified_dashboard_screen.dart
+
+- File: screens/profile/universal_profile_screen.dart
+  Classes: UniversalProfileScreen, _UniversalProfileScreenState, _ManagerProfileSheet, _EditProfileSheet, _EditProfileSheetState, _EditContactSheet, _EditContactSheetState
+  Used by (1):
+    * screens/more/universal_more_tab.dart
+
+- File: screens/profile_screen.dart
+  Classes: ProfileScreen, _ProfileScreenState
+  Used by (6):
+    * features/leave_management/screens/admin/admin_leave_screen.dart
+    * features/settings/screens/manager/manager_profile_tab.dart
+    * screens/attendance/admin_attendance_screen.dart
+    * screens/employee/employee_team_members_tab.dart
+    * screens/more/universal_more_tab.dart
+    * screens/unified_dashboard_screen.dart
+
+- File: screens/register_screen.dart
+  Classes: RegisterScreen, _RegisterScreenState
+  Used by (1):
+    * screens/pre_login_screen.dart
+
+- File: screens/unified_dashboard_screen.dart
+  Classes: UnifiedDashboardScreen, _UnifiedDashboardScreenState, _AdminApprovalReviewScreen, _AdminApprovalReviewScreenState
+  Used by (2):
+    * screens/auth_wrapper.dart
+    * screens/splash_screen.dart
+
+- File: widgets/full_map_screen.dart
+  Classes: FullMapScreen
+  Used by (3):
+    * features/attendance/screens/manager/manager_home_tab.dart
+    * screens/employee/home_tab.dart
+    * screens/unified_dashboard_screen.dart
+
+- File: widgets/org_overview_tab.dart
+  Classes: OrgOverviewTab
+  Used by (1):
+    * screens/unified_dashboard_screen.dart
+
+- File: widgets/org_policies_tab.dart
+  Classes: OrgPoliciesTab
+  Used by (1):
+    * screens/unified_dashboard_screen.dart
+
+- File: widgets/org_reports_tab.dart
+  Classes: OrgReportsTab
+  Used by (1):
+    * screens/unified_dashboard_screen.dart
+

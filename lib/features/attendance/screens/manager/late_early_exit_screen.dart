@@ -83,7 +83,7 @@ class _LateEarlyExitScreenState extends State<LateEarlyExitScreen> {
               }).toList();
 
 
-              // â”€â”€ Build month log lists â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              
               final List<Map<String, dynamic>> lateLogs = [];
               final List<Map<String, dynamic>> earlyLogs = [];
 

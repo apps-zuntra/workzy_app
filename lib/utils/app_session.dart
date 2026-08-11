@@ -1,4 +1,4 @@
-﻿/// AppSession â€” Global in-memory state for the authenticated user.
+/// AppSession â€” Global in-memory state for the authenticated user.
 ///
 /// After a successful login, [companyId], [role], and company location
 /// are stored here so every screen can access them without re-querying
@@ -36,10 +36,52 @@ class AppSession {
   /// Annual paid leave entitlement per employee (days)
   int paidLeavesPerYear = 12;
 
-  // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ————————————————————————————————————————————————————————————————
 
+  bool get isSuperAdmin => role?.toLowerCase() == 'super_admin' || role?.toLowerCase() == 'superadmin';
+  bool get isHrAdmin => role?.toLowerCase() == 'hr_admin' || role?.toLowerCase() == 'hradmin';
   bool get isManager => role?.toLowerCase() == 'manager';
   bool get isEmployee => role?.toLowerCase() == 'employee';
+
+  /// Grouped getter for administrative dashboards (Super Admin & HR Admin)
+  bool get hasAdminAccess => isSuperAdmin || isHrAdmin;
+
+  /// Clean display title for the 4 webapp roles
+  String get displayRole {
+    final r = (role ?? 'employee').toLowerCase().replaceAll('_', ' ');
+    if (r == 'super admin' || r == 'superadmin') return 'Super Admin';
+    if (r == 'hr admin' || r == 'hradmin') return 'HR Admin';
+    if (r == 'manager') return 'Manager';
+    if (r == 'employee') return 'Employee';
+    return r.split(' ').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
+  }
+
+  /// Dynamic Permissions Matrix fetched from Firestore
+  Map<String, dynamic> featurePermissions = {};
+
+  bool hasPermission(String featureKey) {
+    if (isSuperAdmin) {
+      // Super Admin automatically gets full access and settings
+      return true;
+    }
+
+    final roleKey = role?.toLowerCase() ?? 'employee';
+    final List<dynamic> allowed = featurePermissions[roleKey] ?? _getDefaultPermissionsFor(roleKey);
+    return allowed.contains(featureKey);
+  }
+
+  List<String> _getDefaultPermissionsFor(String roleKey) {
+    final r = roleKey.toLowerCase();
+    if (r == 'super_admin' || r == 'superadmin') {
+      return ["my-space", "dashboard-approval", "dashboard-leave", "team", "team-approval", "create-announcement", "organization", "attendance", "approve-attendance", "leave", "approve-leave", "tasks", "create-task", "documents", "settings", "support", "approvals", "reports"];
+    } else if (r == 'hr_admin' || r == 'hradmin') {
+      return ["my-space", "dashboard-approval", "dashboard-leave", "team", "team-approval", "create-announcement", "organization", "attendance", "approve-attendance", "leave", "approve-leave", "tasks", "create-task", "documents", "support", "approvals", "reports"];
+    } else if (r == 'manager') {
+      return ["my-space", "dashboard-approval", "dashboard-leave", "team", "team-approval", "create-announcement", "attendance", "approve-attendance", "leave", "approve-leave", "tasks", "create-task", "documents", "support", "approvals", "reports"];
+    } else {
+      return ["my-space", "dashboard-leave", "attendance", "leave", "tasks", "documents", "support"];
+    }
+  }
 
   /// True only when the session has been fully populated after login.
   bool get isReady =>
@@ -60,6 +102,7 @@ class AppSession {
     String? shiftEndTime,
     int? gracePeriod,
     int? paidLeavesPerYear,
+    Map<String, dynamic>? featurePermissions,
   }) {
     this.uid = uid;
     this.email = email;
@@ -74,6 +117,7 @@ class AppSession {
     if (shiftEndTime != null) this.shiftEndTime = shiftEndTime;
     if (gracePeriod != null) this.gracePeriod = gracePeriod;
     if (paidLeavesPerYear != null) this.paidLeavesPerYear = paidLeavesPerYear;
+    if (featurePermissions != null) this.featurePermissions = featurePermissions;
   }
 
   /// Clear everything on sign-out.
@@ -91,5 +135,6 @@ class AppSession {
     shiftEndTime = "18:00";
     gracePeriod = 15;
     paidLeavesPerYear = 12;
+    featurePermissions = {};
   }
 }
