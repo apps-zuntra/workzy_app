@@ -71,14 +71,11 @@ class _TeamFeedViewState extends State<TeamFeedView> {
       'timestamp': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
       'likes': 0,
-      'comments': 0,
+      'comments': [],
+      'reactions': [],
     };
 
-    await Future.wait([
-      FirestoreService.companyDoc().collection('feed_posts').add(postMap),
-      FirestoreService.companyDoc().collection('feed').add(postMap),
-      FirestoreService.companyDoc().collection('posts').add(postMap),
-    ]);
+    await FirestoreService.companyDoc().collection('team_feed').add(postMap);
 
     _postController.clear();
   }
@@ -105,6 +102,94 @@ class _TeamFeedViewState extends State<TeamFeedView> {
     }
   }
 
+  Future<void> _updatePostReaction(DocumentReference docRef, List reactionsList, String emoji) async {
+    final myEmail = AppSession().email ?? '';
+    if (myEmail.isEmpty) return;
+
+    List updated = List.from(reactionsList);
+    updated.removeWhere((r) => r is Map && r['email'] == myEmail);
+    
+    final alreadyHadSame = reactionsList.any((r) => r is Map && r['email'] == myEmail && r['emoji'] == emoji);
+    if (!alreadyHadSame) {
+      updated.add({
+        'email': myEmail,
+        'emoji': emoji,
+      });
+    }
+
+    await docRef.update({'reactions': updated});
+  }
+
+  Future<void> _updateCommentReaction(DocumentReference postDocRef, List allComments, String commentId, String emoji) async {
+    final myEmail = AppSession().email ?? '';
+    if (myEmail.isEmpty) return;
+
+    List updatedComments = allComments.map((comment) {
+      final cMap = Map<String, dynamic>.from(comment);
+      if (cMap['id'] == commentId) {
+        final List commentReactions = List.from(cMap['reactions'] ?? []);
+        commentReactions.removeWhere((r) => r is Map && r['email'] == myEmail);
+        
+        final alreadyHadSame = (cMap['reactions'] ?? []).any((r) => r is Map && r['email'] == myEmail && r['emoji'] == emoji);
+        if (!alreadyHadSame) {
+          commentReactions.add({
+            'email': myEmail,
+            'emoji': emoji,
+          });
+        }
+        cMap['reactions'] = commentReactions;
+      }
+      return cMap;
+    }).toList();
+
+    await postDocRef.update({'comments': updatedComments});
+  }
+
+  void _showEmojiPicker({
+    required BuildContext context,
+    required Function(String emoji) onSelected,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'React with Emoji',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF374151)),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: emojis.map((emoji) {
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      onSelected(emoji);
+                    },
+                    child: Text(
+                      emoji,
+                      style: const TextStyle(fontSize: 32),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _showCommentsBottomSheet(BuildContext context, DocumentReference docRef) {
     final TextEditingController commentController = TextEditingController();
 
@@ -113,125 +198,229 @@ class _TeamFeedViewState extends State<TeamFeedView> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE5E7EB),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'Comments',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
-                ),
-              ),
-              const Divider(height: 1, color: Color(0xFFF3F4F6)),
-              Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: docRef.collection('comments').orderBy('timestamp', descending: false).snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final commentsDocs = snapshot.data?.docs ?? [];
-                    if (commentsDocs.isEmpty) {
-                      return const Center(
-                        child: Text('No comments yet. Be the first to comment!', style: TextStyle(color: Color(0xFF9CA3AF))),
-                      );
-                    }
-                    return ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: commentsDocs.length,
-                      itemBuilder: (context, index) {
-                        final cData = commentsDocs[index].data() as Map<String, dynamic>;
-                        final cName = cData['userName'] ?? 'Member';
-                        final cText = cData['text'] ?? '';
-                        final ts = cData['timestamp'] as Timestamp?;
-                        final cTime = ts != null ? DateFormat('hh:mm a').format(ts.toDate()) : 'Now';
+        return StreamBuilder<DocumentSnapshot>(
+          stream: docRef.snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData || !snapshot.data!.exists) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF9FAFB),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(cName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1F2937))),
-                                  Text(cTime, style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(cText, style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563))),
-                            ],
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
+            final postData = snapshot.data!.data() as Map<String, dynamic>;
+            final List rawComments = postData['comments'] is List ? postData['comments'] as List : [];
+            
+            DateTime? parseDate(dynamic d) {
+              if (d == null) return null;
+              if (d is Timestamp) return d.toDate();
+              if (d is DateTime) return d;
+              if (d is int) return DateTime.fromMillisecondsSinceEpoch(d);
+              if (d is String) return DateTime.tryParse(d);
+              return null;
+            }
+
+            final comments = rawComments.map((c) => Map<String, dynamic>.from(c)).toList()
+              ..sort((a, b) {
+                final aTime = parseDate(a['createdAt']) ?? DateTime(2000);
+                final bTime = parseDate(b['createdAt']) ?? DateTime(2000);
+                return aTime.compareTo(bTime);
+              });
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: Color(0xFFF3F4F6))),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: commentController,
-                        decoration: const InputDecoration(
-                          hintText: 'Add a comment...',
-                          hintStyle: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
-                          border: InputBorder.none,
-                          isDense: true,
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'Comments',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFF3F4F6)),
+                  Expanded(
+                    child: comments.isEmpty
+                        ? const Center(
+                            child: Text('No comments yet. Be the first to comment!', style: TextStyle(color: Color(0xFF9CA3AF))),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: comments.length,
+                            itemBuilder: (context, index) {
+                              final cData = comments[index];
+                              final cName = cData['author'] ?? cData['userName'] ?? 'Member';
+                              final cText = cData['text'] ?? cData['content'] ?? cData['message'] ?? '';
+                              final tsVal = parseDate(cData['createdAt'] ?? cData['timestamp']);
+                              final cTime = tsVal != null ? DateFormat('hh:mm a').format(tsVal) : 'Now';
+                              
+                              final reactionsList = cData['reactions'] is List ? cData['reactions'] as List : [];
+                              final commentId = cData['id'] ?? '';
+
+                              // Render comment reactions
+                              Map<String, int> rxCounts = {};
+                              for (var rx in reactionsList) {
+                                if (rx is Map) {
+                                  final emoji = rx['emoji']?.toString() ?? '';
+                                  if (emoji.isNotEmpty) {
+                                    rxCounts[emoji] = (rxCounts[emoji] ?? 0) + 1;
+                                  }
+                                }
+                              }
+
+                              final myEmail = AppSession().email ?? '';
+                              final myReaction = reactionsList.firstWhere(
+                                (r) => r is Map && r['email'] == myEmail,
+                                orElse: () => null,
+                              );
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF9FAFB),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(cName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1F2937))),
+                                        Text(cTime, style: const TextStyle(fontSize: 10, color: Color(0xFF9CA3AF))),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(cText, style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563))),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Row(
+                                          children: rxCounts.entries.map((e) {
+                                            return Container(
+                                              margin: const EdgeInsets.only(right: 6),
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: const Color(0xFFE5E7EB)),
+                                              ),
+                                              child: Text('${e.key} ${e.value}', style: const TextStyle(fontSize: 10)),
+                                            );
+                                          }).toList(),
+                                        ),
+                                        GestureDetector(
+                                          onTap: () {
+                                            _showEmojiPicker(
+                                              context: context,
+                                              onSelected: (emoji) {
+                                                _updateCommentReaction(docRef, rawComments, commentId, emoji);
+                                              },
+                                            );
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: myReaction != null ? const Color(0xFFEEF2FF) : Colors.transparent,
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Text(
+                                                  myReaction != null ? myReaction['emoji'] : '☺',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: myReaction != null ? const Color(0xFF5C5CFF) : const Color(0xFF9CA3AF),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  myReaction != null ? 'Reacted' : 'React',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: myReaction != null ? const Color(0xFF5C5CFF) : const Color(0xFF9CA3AF),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: const BoxDecoration(
+                      border: Border(top: BorderSide(color: Color(0xFFF3F4F6))),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: commentController,
+                            decoration: const InputDecoration(
+                              hintText: 'Add a comment...',
+                              hintStyle: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF)),
+                              border: InputBorder.none,
+                              isDense: true,
+                            ),
+                          ),
                         ),
-                      ),
+                        IconButton(
+                          icon: const Icon(Icons.send_rounded, color: Color(0xFF5C5CFF), size: 20),
+                          onPressed: () async {
+                            final text = commentController.text.trim();
+                            if (text.isEmpty) return;
+                            commentController.clear();
+                            
+                            final timestamp = DateTime.now().millisecondsSinceEpoch;
+                            final initials = _getInitials(AppSession().userName ?? 'Member');
+                            
+                            final newComment = {
+                              'attachment': null,
+                              'author': AppSession().userName ?? 'Member',
+                              'authorEmail': AppSession().email ?? '',
+                              'color': '#5C5CFF',
+                              'createdAt': timestamp,
+                              'id': 'FC_${timestamp}_${initials.toLowerCase()}',
+                              'initials': initials,
+                              'reactions': [],
+                              'text': text,
+                            };
+
+                            await docRef.update({
+                              'comments': FieldValue.arrayUnion([newComment]),
+                            });
+                          },
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.send_rounded, color: Color(0xFF5C5CFF), size: 20),
-                      onPressed: () async {
-                        final text = commentController.text.trim();
-                        if (text.isEmpty) return;
-                        commentController.clear();
-                        await docRef.collection('comments').add({
-                          'userName': AppSession().userName ?? 'Member',
-                          'userEmail': AppSession().email ?? '',
-                          'text': text,
-                          'timestamp': FieldValue.serverTimestamp(),
-                        });
-                        await docRef.update({
-                          'comments': FieldValue.increment(1),
-                          'commentsCount': FieldValue.increment(1),
-                        });
-                      },
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -256,64 +445,67 @@ class _TeamFeedViewState extends State<TeamFeedView> {
     final myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirestoreService.companyDoc().collection('feed_posts').snapshots(),
-      builder: (context, snapshot1) {
-        return StreamBuilder<QuerySnapshot>(
-          stream: FirestoreService.companyDoc().collection('feed').snapshots(),
-          builder: (context, snapshot2) {
-            return StreamBuilder<QuerySnapshot>(
-              stream: FirestoreService.companyDoc().collection('posts').snapshots(),
-              builder: (context, snapshot3) {
-                if (snapshot1.connectionState == ConnectionState.waiting &&
-                    snapshot2.connectionState == ConnectionState.waiting &&
-                    snapshot3.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+      stream: FirestoreService.companyDoc().collection('team_feed')
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-                final Map<String, DocumentSnapshot> combinedDocsMap = {};
-                for (var d in (snapshot1.data?.docs ?? [])) {
-                  combinedDocsMap[d.id] = d;
-                }
-                for (var d in (snapshot2.data?.docs ?? [])) {
-                  combinedDocsMap[d.id] = d;
-                }
-                for (var d in (snapshot3.data?.docs ?? [])) {
-                  combinedDocsMap[d.id] = d;
-                }
-
-                final rawDocs = combinedDocsMap.values.toList();
-                rawDocs.sort((a, b) {
-                  final tA = (a.data() as Map<String, dynamic>?)?['timestamp'] as Timestamp? ??
-                      (a.data() as Map<String, dynamic>?)?['createdAt'] as Timestamp?;
-                  final tB = (b.data() as Map<String, dynamic>?)?['timestamp'] as Timestamp? ??
-                      (b.data() as Map<String, dynamic>?)?['createdAt'] as Timestamp?;
-                  if (tA == null || tB == null) return 0;
-                  return tB.compareTo(tA);
-                });
-
-                final docs = rawDocs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final dept = (data['department'] ?? '').toString().trim().toLowerCase();
-                  if (myDept.isEmpty || AppSession().isSuperAdmin) return true;
-                  return dept == myDept || dept.isEmpty;
-                }).toList();
+        final docs = (snapshot.data?.docs ?? []).where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final dept = (data['department'] ?? '').toString().trim().toLowerCase();
+          if (myDept.isEmpty || AppSession().isSuperAdmin) return true;
+          return dept == myDept || dept.isEmpty;
+        }).toList();
 
         if (docs.isEmpty) {
           return const Center(child: Text('No posts yet for your department.', style: TextStyle(color: Color(0xFF6B7280))));
         }
 
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 80), // padding at bottom for input
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final data = docs[index].data() as Map<String, dynamic>;
-            
-            final name = data['name'] ?? 'Unknown';
-            final text = data['text'] ?? '';
+
+            final name = data['name'] ?? data['author'] ?? data['authorName'] ?? 'Unknown';
+            final text = data['text'] ?? data['content'] ?? data['message'] ?? '';
             final likes = data['likes'] ?? 0;
-            final comments = data['comments'] ?? 0;
-            final ts = data['timestamp'] as Timestamp?;
-            final timeStr = ts != null ? _formatTimeAgo(ts.toDate()) : 'Just now';
+            
+            final List commentsList = data['comments'] is List ? data['comments'] as List : [];
+            final commentsCount = commentsList.length;
+            
+            final List reactionsList = data['reactions'] is List ? data['reactions'] as List : [];
+
+            DateTime? parseDate(dynamic d) {
+              if (d == null) return null;
+              if (d is Timestamp) return d.toDate();
+              if (d is DateTime) return d;
+              if (d is int) return DateTime.fromMillisecondsSinceEpoch(d);
+              if (d is String) return DateTime.tryParse(d);
+              return null;
+            }
+            final tsVal = parseDate(data['createdAt'] ?? data['timestamp']);
+            final timeStr = tsVal != null ? _formatTimeAgo(tsVal) : 'Just now';
+
+            // Post reactions grouping
+            Map<String, int> rxCounts = {};
+            for (var rx in reactionsList) {
+              if (rx is Map) {
+                final emoji = rx['emoji']?.toString() ?? '';
+                if (emoji.isNotEmpty) {
+                  rxCounts[emoji] = (rxCounts[emoji] ?? 0) + 1;
+                }
+              }
+            }
+
+            final myEmail = AppSession().email ?? '';
+            final myPostReaction = reactionsList.firstWhere(
+              (r) => r is Map && r['email'] == myEmail,
+              orElse: () => null,
+            );
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -323,7 +515,7 @@ class _TeamFeedViewState extends State<TeamFeedView> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.02),
+                    color: Colors.black.withValues(alpha: 0.02),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   )
@@ -358,12 +550,34 @@ class _TeamFeedViewState extends State<TeamFeedView> {
                     text,
                     style: const TextStyle(fontSize: 14, color: Color(0xFF4B5563), height: 1.4),
                   ),
+                  
+                  // Post reactions display row
+                  if (rxCounts.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: rxCounts.entries.map((e) {
+                        return Container(
+                          margin: const EdgeInsets.only(right: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3F4F6),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text('${e.key} ${e.value}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+
                   const SizedBox(height: 16),
-                  Row(
+                  Wrap(
+                    spacing: 20,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       GestureDetector(
                         onTap: () => _toggleStar(docs[index].reference, data['likedBy']),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
                               (data['likedBy'] is List && (data['likedBy'] as List).contains(AppSession().email))
@@ -375,24 +589,61 @@ class _TeamFeedViewState extends State<TeamFeedView> {
                                   : const Color(0xFF9CA3AF),
                             ),
                             const SizedBox(width: 4),
-                            Text('$likes',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: (data['likedBy'] is List && (data['likedBy'] as List).contains(AppSession().email))
-                                        ? const Color(0xFFF59E0B)
-                                        : const Color(0xFF9CA3AF),
-                                    fontWeight: FontWeight.w600)),
+                            Text(
+                              '${likes is num ? likes.toInt() : (likes is List ? likes.length : int.tryParse(likes.toString()) ?? 0)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: (data['likedBy'] is List && (data['likedBy'] as List).contains(AppSession().email))
+                                    ? const Color(0xFFF59E0B)
+                                    : const Color(0xFF9CA3AF),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 20),
+                      
+                      GestureDetector(
+                        onTap: () {
+                          _showEmojiPicker(
+                            context: context,
+                            onSelected: (emoji) {
+                              _updatePostReaction(docs[index].reference, reactionsList, emoji);
+                            },
+                          );
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              myPostReaction != null ? Icons.add_reaction : Icons.add_reaction_outlined,
+                              size: 18,
+                              color: myPostReaction != null ? const Color(0xFF5C5CFF) : const Color(0xFF9CA3AF),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              myPostReaction != null ? myPostReaction['emoji'] : 'React',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: myPostReaction != null ? const Color(0xFF5C5CFF) : const Color(0xFF9CA3AF),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
                       GestureDetector(
                         onTap: () => _showCommentsBottomSheet(context, docs[index].reference),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: Color(0xFF9CA3AF)),
                             const SizedBox(width: 4),
-                            Text('$comments', style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500)),
+                            Text(
+                              '$commentsCount',
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500),
+                            ),
                           ],
                         ),
                       ),

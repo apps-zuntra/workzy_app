@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -57,11 +57,21 @@ class _EmployeeLeaveTabState extends State<EmployeeLeaveTab> {
              return Center(child: Text('Error: ${snapshot.error}'));
           }
 
+          DateTime? parseDate(dynamic d) {
+            if (d == null) return null;
+            if (d is Timestamp) return d.toDate();
+            if (d is DateTime) return d;
+            if (d is String) return DateTime.tryParse(d);
+            return null;
+          }
+
           // Sort in-memory
           final docs = snapshot.data!.docs.toList()
             ..sort((a, b) {
-              final aDate = (a.data() as Map<String, dynamic>)['requestDate'] as Timestamp?;
-              final bDate = (b.data() as Map<String, dynamic>)['requestDate'] as Timestamp?;
+              final aMap = a.data() as Map<String, dynamic>;
+              final bMap = b.data() as Map<String, dynamic>;
+              final aDate = parseDate(aMap['requestDate'] ?? aMap['createdAt'] ?? aMap['applied']);
+              final bDate = parseDate(bMap['requestDate'] ?? bMap['createdAt'] ?? bMap['applied']);
               if (aDate == null) return 1;
               if (bDate == null) return -1;
               return bDate.compareTo(aDate);
@@ -102,12 +112,38 @@ class _EmployeeLeaveTabState extends State<EmployeeLeaveTab> {
   int _calculateUsedLeaves(List<QueryDocumentSnapshot> requests) {
     int total = 0;
     final now = DateTime.now();
+    DateTime? parseDate(dynamic d) {
+      if (d == null) return null;
+      if (d is Timestamp) return d.toDate();
+      if (d is DateTime) return d;
+      if (d is String) return DateTime.tryParse(d);
+      return null;
+    }
+    int calculateWorkingDays(DateTime from, DateTime to) {
+      final start = DateTime(from.year, from.month, from.day);
+      final end = DateTime(to.year, to.month, to.day);
+      int count = 0;
+      DateTime current = start;
+      while (!current.isAfter(end)) {
+        if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+          count++;
+        }
+        current = current.add(const Duration(days: 1));
+      }
+      return count;
+    }
     for (var doc in requests) {
       final data = doc.data() as Map<String, dynamic>;
-      if (data['leaveType'] == 'Paid Leave' && data['status'] == 'approved') {
-        final start = (data['fromDate'] as Timestamp?)?.toDate();
+      final status = (data['status'] ?? '').toString().toLowerCase();
+      if (status == 'approved') {
+        final start = parseDate(data['fromDate'] ?? data['from'] ?? data['startDate']);
+        final end = parseDate(data['toDate'] ?? data['to'] ?? data['endDate']);
         if (start != null && start.year == now.year) {
-          total += (data['durationInDays'] as num?)?.toInt() ?? 0;
+          if (end != null) {
+            total += calculateWorkingDays(start, end);
+          } else {
+            total += ((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1;
+          }
         }
       }
     }
@@ -305,6 +341,13 @@ class _EmployeeLeaveTabState extends State<EmployeeLeaveTab> {
         const SizedBox(height: 16),
         ...requests.take(3).map((doc) {
           final data = doc.data() as Map<String, dynamic>;
+          DateTime? parseDate(dynamic d) {
+            if (d == null) return null;
+            if (d is Timestamp) return d.toDate();
+            if (d is DateTime) return d;
+            if (d is String) return DateTime.tryParse(d);
+            return null;
+          }
           final String statusText = (data['status'] ?? 'PENDING').toString().toUpperCase();
           final Color statusColor = statusText == 'APPROVED' ? AppTheme.success : statusText == 'PENDING' ? AppTheme.warning : AppTheme.danger;
 
@@ -330,20 +373,20 @@ class _EmployeeLeaveTabState extends State<EmployeeLeaveTab> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      data['fromDate'] != null && data['fromDate'] is Timestamp
-                        ? DateFormat('MMM dd').format((data['fromDate'] as Timestamp).toDate())
+                      parseDate(data['fromDate'] ?? data['from']) != null
+                        ? DateFormat('MMM dd').format(parseDate(data['fromDate'] ?? data['from'])!)
                         : 'N/A', 
                       style: AppTheme.bodySmall
                     ),
                     const Icon(Icons.arrow_forward_rounded, size: 12, color: AppTheme.textHint),
                     Text(
-                      data['toDate'] != null && data['toDate'] is Timestamp
-                        ? DateFormat('MMM dd').format((data['toDate'] as Timestamp).toDate())
+                      parseDate(data['toDate'] ?? data['to']) != null
+                        ? DateFormat('MMM dd').format(parseDate(data['toDate'] ?? data['to'])!)
                         : 'N/A', 
                       style: AppTheme.bodySmall
                     ),
                     const Spacer(),
-                    Text('${data['durationInDays'] ?? 0} Days', style: AppTheme.bodySmall.copyWith(fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                    Text('${((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1} Days', style: AppTheme.bodySmall.copyWith(fontWeight: FontWeight.bold, color: AppTheme.primary)),
                   ],
                 ),
               ],
@@ -393,20 +436,46 @@ class _EmployeeLeaveTabState extends State<EmployeeLeaveTab> {
             .get();
 
         int currentYearUsed = 0;
+        int calculateWorkingDays(DateTime from, DateTime to) {
+          final start = DateTime(from.year, from.month, from.day);
+          final end = DateTime(to.year, to.month, to.day);
+          int count = 0;
+          DateTime current = start;
+          while (!current.isAfter(end)) {
+            if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+              count++;
+            }
+            current = current.add(const Duration(days: 1));
+          }
+          return count;
+        }
+
+        DateTime? parseDate(dynamic d) {
+          if (d == null) return null;
+          if (d is Timestamp) return d.toDate();
+          if (d is DateTime) return d;
+          if (d is String) return DateTime.tryParse(d);
+          return null;
+        }
+
         for (var doc in leaves.docs) {
           final d = doc.data();
           if (d['status'] != 'rejected') {
-            final fromDateValue = d['fromDate'];
-            if (fromDateValue != null && fromDateValue is Timestamp) {
-              final date = fromDateValue.toDate();
-              if (date.year == now.year) {
+            final fromDateValue = d['fromDate'] ?? d['from'] ?? d['startDate'];
+            final toDateValue = d['toDate'] ?? d['to'] ?? d['endDate'];
+            final start = parseDate(fromDateValue);
+            final end = parseDate(toDateValue);
+            if (start != null && start.year == now.year) {
+              if (end != null) {
+                currentYearUsed += calculateWorkingDays(start, end);
+              } else {
                 currentYearUsed += (d['durationInDays'] as num?)?.toInt() ?? 0;
               }
             }
           }
         }
         
-        final requestedDays = toDate.difference(fromDate).inDays + 1;
+        final requestedDays = calculateWorkingDays(fromDate, toDate);
         final limit = AppSession().paidLeavesPerYear;
 
         if (currentYearUsed + requestedDays > limit) {

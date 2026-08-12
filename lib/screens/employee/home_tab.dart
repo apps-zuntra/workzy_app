@@ -1,6 +1,7 @@
-﻿import 'package:attendance_app/screens/employee/employee_team_tasks_tab.dart';
+import 'package:attendance_app/screens/employee/employee_team_tasks_tab.dart';
 import 'package:attendance_app/screens/employee/employee_team_announcements_tab.dart';
 import 'package:attendance_app/screens/employee/employee_feed_tab.dart';
+import 'package:attendance_app/widgets/team_feed_view.dart';
 import 'package:attendance_app/screens/employee/employee_team_members_tab.dart';
 import 'package:attendance_app/screens/employee/employee_attendance_summary_screen.dart';
 import 'dart:async';
@@ -61,6 +62,10 @@ class _EmployeeHomeTabState extends State<EmployeeHomeTab> {
   late final Stream<DocumentSnapshot> _todayAttendanceStream;
   late final Stream<QuerySnapshot> _allAttendanceStream;
   late final Stream<QuerySnapshot> _leaveRequestsStream;
+  late final Stream<QuerySnapshot> _activeTasksStream;
+  late final Stream<QuerySnapshot> _pendingLeaveStream;
+  late final Stream<QuerySnapshot> _pendingCorrectionsStream;
+  late final Stream<QuerySnapshot> _recentAnnouncementsStream;
 
   @override
   void initState() {
@@ -72,6 +77,41 @@ class _EmployeeHomeTabState extends State<EmployeeHomeTab> {
     _allAttendanceStream = _todayRef.snapshots();
     _leaveRequestsStream =
         FirestoreService.userLeaveRequestsCol(userEmail).snapshots();
+        
+    _activeTasksStream = FirebaseFirestore.instance
+        .collection('organizations')
+        .doc(FirestoreService.companyId)
+        .collection('tasks')
+        .where('assignedTo', isEqualTo: userEmail)
+        .limit(5)
+        .snapshots();
+
+    _pendingLeaveStream = FirebaseFirestore.instance
+        .collection('organizations')
+        .doc(FirestoreService.companyId)
+        .collection('leave_requests')
+        .where('userId', isEqualTo: AppSession().uid)
+        .where('status', isEqualTo: 'pending')
+        .limit(5)
+        .snapshots();
+
+    _pendingCorrectionsStream = FirebaseFirestore.instance
+        .collection('organizations')
+        .doc(FirestoreService.companyId)
+        .collection('attendance_corrections')
+        .where('userId', isEqualTo: AppSession().uid)
+        .where('status', isEqualTo: 'pending')
+        .limit(3)
+        .snapshots();
+
+    _recentAnnouncementsStream = FirebaseFirestore.instance
+        .collection('organizations')
+        .doc(FirestoreService.companyId)
+        .collection('announcements')
+        .orderBy('createdAt', descending: true)
+        .limit(3)
+        .snapshots();
+
     _startLocationUpdates();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
@@ -682,7 +722,7 @@ class _EmployeeHomeTabState extends State<EmployeeHomeTab> {
                                         height:
                                             MediaQuery.of(context).size.height -
                                                 240,
-                                        child: const EmployeeFeedTab(),
+                                        child: const TeamFeedView(),
                                       )
                                     else if (_selectedSubTab == 2)
                                       const EmployeeTeamAnnouncementsTab()
@@ -1443,16 +1483,44 @@ class _EmployeeHomeTabState extends State<EmployeeHomeTab> {
         ? AppSession().paidLeavesPerYear
         : 12;
     int usedPaidLeaves = 0, pendingCount = 0, upcomingCount = 0;
+    int calculateWorkingDays(DateTime from, DateTime to) {
+      final start = DateTime(from.year, from.month, from.day);
+      final end = DateTime(to.year, to.month, to.day);
+      int count = 0;
+      DateTime current = start;
+      while (!current.isAfter(end)) {
+        if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+          count++;
+        }
+        current = current.add(const Duration(days: 1));
+      }
+      return count;
+    }
+
+    DateTime? parseDate(dynamic d) {
+      if (d == null) return null;
+      if (d is Timestamp) return d.toDate();
+      if (d is DateTime) return d;
+      if (d is String) return DateTime.tryParse(d);
+      return null;
+    }
+
     for (var doc in leaveRequests) {
       final data = doc.data() as Map<String, dynamic>;
       if (data['status'] == 'pending') pendingCount++;
       if (data['leaveType'] == 'Paid Leave' && data['status'] == 'approved') {
-        final start = (data['fromDate'] as Timestamp?)?.toDate();
-        if (start != null && start.year == now.year)
-          usedPaidLeaves += (data['durationInDays'] as num?)?.toInt() ?? 0;
+        final start = parseDate(data['fromDate'] ?? data['from'] ?? data['startDate']);
+        final end = parseDate(data['toDate'] ?? data['to'] ?? data['endDate']);
+        if (start != null && start.year == now.year) {
+          if (end != null) {
+            usedPaidLeaves += calculateWorkingDays(start, end);
+          } else {
+            usedPaidLeaves += (data['durationInDays'] as num?)?.toInt() ?? 0;
+          }
+        }
       }
       if (data['status'] == 'approved') {
-        final start = (data['fromDate'] as Timestamp?)?.toDate();
+        final start = parseDate(data['fromDate'] ?? data['from'] ?? data['startDate']);
         if (start != null && start.isAfter(now)) upcomingCount++;
       }
     }
@@ -1544,13 +1612,7 @@ class _EmployeeHomeTabState extends State<EmployeeHomeTab> {
 
   Widget _buildActiveTasksCard() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('organizations')
-          .doc(FirestoreService.companyId)
-          .collection('tasks')
-          .where('assignedTo', isEqualTo: user?.email)
-          .limit(5)
-          .snapshots(),
+      stream: _activeTasksStream,
       builder: (context, snapshot) {
         final tasks = snapshot.data?.docs ?? [];
         final List<Map<String, dynamic>> displayTasks = tasks.isEmpty
@@ -1663,24 +1725,10 @@ class _EmployeeHomeTabState extends State<EmployeeHomeTab> {
   Widget _buildPendingRequestsCard() {
     final userEmail = user?.email ?? '';
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('organizations')
-          .doc(FirestoreService.companyId)
-          .collection('leave_requests')
-          .where('userId', isEqualTo: AppSession().uid)
-          .where('status', isEqualTo: 'pending')
-          .limit(5)
-          .snapshots(),
+      stream: _pendingLeaveStream,
       builder: (context, leaveSnap) {
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('organizations')
-              .doc(FirestoreService.companyId)
-              .collection('attendance_corrections')
-              .where('userId', isEqualTo: AppSession().uid)
-              .where('status', isEqualTo: 'pending')
-              .limit(3)
-              .snapshots(),
+          stream: _pendingCorrectionsStream,
           builder: (context, corrSnap) {
             final List<Map<String, dynamic>> requests = [];
             for (var doc in corrSnap.data?.docs ?? []) {
@@ -1790,13 +1838,7 @@ class _EmployeeHomeTabState extends State<EmployeeHomeTab> {
 
   Widget _buildRecentAnnouncementsCard() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('organizations')
-          .doc(FirestoreService.companyId)
-          .collection('announcements')
-          .orderBy('createdAt', descending: true)
-          .limit(3)
-          .snapshots(),
+      stream: _recentAnnouncementsStream,
       builder: (context, snap) {
         final docs = snap.data?.docs ?? [];
         final List<Map<String, dynamic>> anns = docs.isEmpty

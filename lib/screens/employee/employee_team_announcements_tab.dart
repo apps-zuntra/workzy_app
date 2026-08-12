@@ -114,7 +114,6 @@ class _EmployeeTeamAnnouncementsTabState
               final notifyOthersStr = (data['notifyOthers'] ?? '').toString().toLowerCase();
 
               if (AppSession().isSuperAdmin) return true;
-              if (aud == 'all' || aud.isEmpty) return true;
               if (myDept.isNotEmpty && (deptId == myDept || targetTeams.contains(myDept) || aud.contains(myDept))) return true;
               if (myEmail.isNotEmpty && (targetEmails.contains(myEmail) || notifyOthersStr.contains(myEmail))) return true;
               return false;
@@ -150,6 +149,8 @@ class _EmployeeTeamAnnouncementsTabState
           separatorBuilder: (context, index) => const SizedBox(height: 16),
           itemBuilder: (context, index) {
             return _buildAnnouncementCard(filteredDocs[index]);
+          },
+        );
           },
         );
       },

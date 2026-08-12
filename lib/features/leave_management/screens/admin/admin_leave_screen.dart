@@ -478,8 +478,22 @@ class _AdminLeaveScreenState extends State<AdminLeaveScreen> {
     }
     setState(() => _isSubmitting = true);
     try {
+      int calculateWorkingDays(DateTime from, DateTime to) {
+        final start = DateTime(from.year, from.month, from.day);
+        final end = DateTime(to.year, to.month, to.day);
+        int count = 0;
+        DateTime current = start;
+        while (!current.isAfter(end)) {
+          if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+            count++;
+          }
+          current = current.add(const Duration(days: 1));
+        }
+        return count;
+      }
+
       final email = user?.email ?? '';
-      final durationInDays = _toDate.difference(_fromDate).inDays + 1;
+      final durationInDays = calculateWorkingDays(_fromDate, _toDate);
       final data = {
         'companyId': FirestoreService.companyId,
         'userId': AppSession().uid,
@@ -553,16 +567,29 @@ class _MySpaceLeaveTabState extends State<_MySpaceLeaveTab> {
   @override
   void initState() {
     super.initState();
-    _leaveStream =
-        FirestoreService.userLeaveRequestsCol(widget.userEmail).snapshots();
+    _leaveStream = FirestoreService.leaveRequestsCol.snapshots();
   }
 
   @override
   Widget build(BuildContext context) {
+    final userEmail = widget.userEmail.toLowerCase();
     return StreamBuilder<QuerySnapshot>(
       stream: _leaveStream,
       builder: (context, snapshot) {
-        final docs = snapshot.data?.docs ?? [];
+        final currentCompanyId = AppSession().companyId;
+        final allDocs = snapshot.data?.docs ?? [];
+        // Filter by email client-side to handle all field name variants
+        final docs = allDocs.where((doc) {
+          final d = doc.data() as Map<String, dynamic>;
+          final docCompanyId = d['companyId'] as String?;
+          if (docCompanyId != null && currentCompanyId != null && docCompanyId != currentCompanyId) {
+            return false;
+          }
+          final e1 = (d['applicantEmail'] ?? '').toString().toLowerCase();
+          final e2 = (d['employeeEmail'] ?? '').toString().toLowerCase();
+          final e3 = (d['email'] ?? '').toString().toLowerCase();
+          return e1 == userEmail || e2 == userEmail || e3 == userEmail;
+        }).toList();
         // Sort by requestDate desc
         final sorted = List.of(docs)
           ..sort((a, b) {
@@ -606,7 +633,7 @@ class _MySpaceLeaveTabState extends State<_MySpaceLeaveTab> {
   // ── Overview & Apply Section ─────────────────────────────
   Widget _buildOverviewAndApplySection(List<QueryDocumentSnapshot> docs) {
     final int usedCount = docs
-        .where((d) => (d.data() as Map)['status'] == 'approved')
+        .where((d) => (d.data() as Map)['status'].toString().toLowerCase() == 'approved')
         .length;
 
     final annual = _countByType(docs, 'Annual Leave');
@@ -673,16 +700,26 @@ class _MySpaceLeaveTabState extends State<_MySpaceLeaveTab> {
 
   (int, int) _countByType(
       List<QueryDocumentSnapshot> docs, String type) {
+    final target = type.toLowerCase().replaceAll(' leave', '');
     final used = docs
-        .where((d) =>
-            (d.data() as Map)['leaveType'] == type &&
-            (d.data() as Map)['status'] == 'approved')
+        .where((d) {
+          final data = d.data() as Map<String, dynamic>;
+          final leaveType = (data['leaveType'] ?? data['type'] ?? 'Annual Leave').toString().toLowerCase();
+          final status = (data['status'] ?? '').toString().toLowerCase();
+          final isApproved = status == 'approved';
+          bool matchesType = leaveType.contains(target);
+          if (!matchesType && (leaveType == 'leave' || leaveType.isEmpty)) {
+            if (target == 'annual') matchesType = true;
+          }
+          return isApproved && matchesType;
+        })
         .fold<int>(0, (sum, d) {
-      return sum +
-          ((d.data() as Map)['durationInDays'] as num? ?? 1).toInt();
-    });
+          final data = d.data() as Map<String, dynamic>;
+          final int days = ((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1;
+          return sum + days;
+        });
     final total = type == 'Annual Leave'
-        ? 18
+        ? (AppSession().paidLeavesPerYear > 0 ? AppSession().paidLeavesPerYear : 18)
         : type == 'Sick Leave'
             ? 7
             : 5;
@@ -871,8 +908,14 @@ class _MySpaceLeaveTabState extends State<_MySpaceLeaveTab> {
     final filtered = filterType == null
         ? allDocs
         : allDocs
-            .where((d) =>
-                (d.data() as Map)['leaveType'] == filterType)
+            .where((d) {
+              final data = d.data() as Map<String, dynamic>;
+              final target = filterType.toLowerCase().replaceAll(' leave', '').trim();
+              final type = (data['leaveType'] ?? data['type'] ?? data['category'] ?? '').toString().toLowerCase();
+              if (type.contains(target)) return true;
+              if ((type.isEmpty || type == 'leave') && target == 'annual') return true;
+              return false;
+            })
             .toList();
 
     if (filtered.isEmpty) {
@@ -917,10 +960,29 @@ class _MySpaceLeaveTabState extends State<_MySpaceLeaveTab> {
   Widget _buildHistoryCard(Map data) {
     final status =
         (data['status'] as String? ?? 'pending').toLowerCase();
-    final leaveType = data['leaveType'] as String? ?? 'Leave';
-    final fromDate = (data['fromDate'] as Timestamp?)?.toDate();
-    final toDate = (data['toDate'] as Timestamp?)?.toDate();
-    final days = data['durationInDays'] as int? ?? 1;
+    String leaveType = (data['leaveType'] ?? data['type'] ?? data['category'] ?? '').toString();
+    if (leaveType.isEmpty || leaveType.toLowerCase() == 'leave') {
+      final r = (data['reason'] ?? '').toString();
+      if (r.isNotEmpty && r.length < 25) {
+        leaveType = '${r[0].toUpperCase()}${r.substring(1)} Leave';
+      } else {
+        leaveType = 'Casual Leave';
+      }
+    }
+
+    final reason = (data['reason'] ?? '').toString();
+    final applicant = (data['applicantName'] ?? data['employee'] ?? data['userName'] ?? '').toString();
+
+    DateTime? parseDate(dynamic d) {
+      if (d is Timestamp) return d.toDate();
+      if (d is DateTime) return d;
+      if (d is String) return DateTime.tryParse(d);
+      return null;
+    }
+    
+    final fromDate = parseDate(data['fromDate'] ?? data['from']);
+    final toDate = parseDate(data['toDate'] ?? data['to']);
+    final days = ((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1;
 
     Color statusColor;
     Color statusBg;
@@ -949,13 +1011,17 @@ class _MySpaceLeaveTabState extends State<_MySpaceLeaveTab> {
     }
 
     String dateRange = 'Unknown';
-    if (fromDate != null && toDate != null) {
-      if (days == 1) {
-        dateRange =
-            '${DateFormat('MMM d, yyyy').format(fromDate)} · 1 day';
+    if (fromDate != null) {
+      final fromStr = DateFormat('MMM d, yyyy').format(fromDate);
+      if (toDate != null) {
+        if (fromDate.year == toDate.year && fromDate.month == toDate.month && fromDate.day == toDate.day) {
+          dateRange = '$fromStr · $days day${days > 1 ? 's' : ''}';
+        } else {
+          final toStr = DateFormat('MMM d, yyyy').format(toDate);
+          dateRange = '$fromStr — $toStr · $days days';
+        }
       } else {
-        dateRange =
-            '${DateFormat('MMM d, yyyy').format(fromDate)} — ${DateFormat('MMM d, yyyy').format(toDate)} · $days days';
+        dateRange = '$fromStr · $days day${days > 1 ? 's' : ''}';
       }
     }
 
@@ -981,6 +1047,16 @@ class _MySpaceLeaveTabState extends State<_MySpaceLeaveTab> {
                 Text(dateRange,
                     style: const TextStyle(
                         fontSize: 12, color: Color(0xFF6B7280))),
+                if (applicant.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text('Applicant: $applicant',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                ],
+                if (reason.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text('Reason: "$reason"',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF4B5563), fontStyle: FontStyle.italic)),
+                ],
               ],
             ),
           ),
@@ -1214,11 +1290,27 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
                                 !fromDate.isAfter(thisMonthEnd);
                           })
                           .fold<int>(0, (sum, d) {
-                            return sum +
-                                ((d.data() as Map)['durationInDays']
-                                            as num? ??
-                                        1)
-                                    .toInt();
+                            final dd = d.data() as Map;
+                            final fromTs = dd['fromDate'] as Timestamp?;
+                            final toTs = dd['toDate'] as Timestamp?;
+                            int days = 1;
+                            if (fromTs != null && toTs != null) {
+                              final start = fromTs.toDate();
+                              final end = toTs.toDate();
+                              int count = 0;
+                              DateTime current = DateTime(start.year, start.month, start.day);
+                              final limitEnd = DateTime(end.year, end.month, end.day);
+                              while (!current.isAfter(limitEnd)) {
+                                if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+                                  count++;
+                                }
+                                current = current.add(const Duration(days: 1));
+                              }
+                              days = count;
+                            } else {
+                              days = (dd['durationInDays'] as num? ?? 1).toInt();
+                            }
+                            return sum + days;
                           });
 
                       return FadeInUp(
@@ -1698,9 +1790,23 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
                               data['fromDate'] as Timestamp?;
                           final toTs =
                               data['toDate'] as Timestamp?;
-                          final days =
-                              data['durationInDays'] as int? ??
-                                  1;
+                          int days = 1;
+                          if (fromTs != null && toTs != null) {
+                            final start = fromTs.toDate();
+                            final end = toTs.toDate();
+                            int count = 0;
+                            DateTime current = DateTime(start.year, start.month, start.day);
+                            final limitEnd = DateTime(end.year, end.month, end.day);
+                            while (!current.isAfter(limitEnd)) {
+                              if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+                                count++;
+                              }
+                              current = current.add(const Duration(days: 1));
+                            }
+                            days = count;
+                          } else {
+                            days = ((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1;
+                          }
                           final reason =
                               data['reason'] as String? ?? '';
 

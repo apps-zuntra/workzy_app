@@ -41,8 +41,7 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
   @override
   void initState() {
     super.initState();
-    final userEmail = user?.email ?? AppSession().email ?? '';
-    _leaveRequestsStream = FirestoreService.userLeaveRequestsCol(userEmail).snapshots();
+    _leaveRequestsStream = FirestoreService.leaveRequestsCol.snapshots();
   }
 
   @override
@@ -64,17 +63,32 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
       bool reqManager = role == 'employee';
       bool reqAdmin = true;
 
+      int calculateWorkingDays(DateTime from, DateTime to) {
+        final start = DateTime(from.year, from.month, from.day);
+        final end = DateTime(to.year, to.month, to.day);
+        int count = 0;
+        DateTime current = start;
+        while (!current.isAfter(end)) {
+          if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+            count++;
+          }
+          current = current.add(const Duration(days: 1));
+        }
+        return count;
+      }
+
       int durationInDays = 1;
       if (_leaveDuration == 'Full Day') {
-        durationInDays = _toDate.difference(_fromDate).inDays + 1;
+        durationInDays = calculateWorkingDays(_fromDate, _toDate);
       } else {
-        durationInDays = 1; // Half day logic could be fractional but we use int 1 for now
+        durationInDays = 1;
       }
 
       final data = {
         'companyId': FirestoreService.companyId,
         'userId': AppSession().uid,
         'email': email ?? AppSession().email,
+        'employeeEmail': email ?? AppSession().email,
         'leaveType': _selectedLeaveType,
         'duration': _leaveDuration,
         'durationInDays': durationInDays,
@@ -89,7 +103,7 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
         'senderRole': (role ?? 'employee').toLowerCase(),
       };
 
-      await FirestoreService.userLeaveRequestsCol(email ?? '').add(data);
+      await FirestoreService.leaveRequestsCol.add(data);
       
       // Notify based on sender role
       final senderRole = (role ?? 'employee').toLowerCase();
@@ -150,7 +164,34 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
           }
-          final docs = snapshot.data?.docs ?? [];
+          final userEmail = (user?.email ?? AppSession().email ?? '').toLowerCase();
+          final currentCompanyId = AppSession().companyId;
+          final allDocs = snapshot.data?.docs ?? [];
+          
+          // DEBUG - remove after fix
+          debugPrint('=== LEAVE DEBUG ===');
+          debugPrint('companyId: ${AppSession().companyId}');
+          debugPrint('userEmail: $userEmail');
+          debugPrint('total docs from Firestore: ${allDocs.length}');
+          for (var doc in allDocs) {
+            final d = doc.data() as Map<String, dynamic>;
+            debugPrint('  doc: applicantEmail=${d['applicantEmail']}, employeeEmail=${d['employeeEmail']}, email=${d['email']}, status=${d['status']}');
+          }
+          
+          final docs = allDocs.where((doc) {
+            final d = doc.data() as Map<String, dynamic>;
+            final docCompanyId = d['companyId'] as String?;
+            if (docCompanyId != null && currentCompanyId != null && docCompanyId != currentCompanyId) {
+              return false;
+            }
+            final e1 = (d['applicantEmail'] ?? '').toString().toLowerCase();
+            final e2 = (d['employeeEmail'] ?? '').toString().toLowerCase();
+            final e3 = (d['email'] ?? '').toString().toLowerCase();
+            return e1 == userEmail || e2 == userEmail || e3 == userEmail;
+          }).toList();
+          
+          debugPrint('docs after email filter: ${docs.length}');
+          debugPrint('===================');
           
           return Column(
             children: [
@@ -274,21 +315,50 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
   Widget _buildLeaveBalanceCard(List<QueryDocumentSnapshot> requests) {
     int usedAnnual = 0, usedSick = 0, usedCasual = 0;
     
+    int calculateWorkingDays(DateTime from, DateTime to) {
+      final start = DateTime(from.year, from.month, from.day);
+      final end = DateTime(to.year, to.month, to.day);
+      int count = 0;
+      DateTime current = start;
+      while (!current.isAfter(end)) {
+        if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+          count++;
+        }
+        current = current.add(const Duration(days: 1));
+      }
+      return count;
+    }
+
+    DateTime? parseDate(dynamic d) {
+      if (d == null) return null;
+      if (d is Timestamp) return d.toDate();
+      if (d is DateTime) return d;
+      if (d is String) return DateTime.tryParse(d);
+      return null;
+    }
+
     for (final doc in requests) {
       final data = doc.data() as Map<String, dynamic>;
       final status = (data['status'] ?? '').toString().toLowerCase();
-      if (status == 'approved') {
-        final type = (data['leaveType'] ?? '').toString().toLowerCase();
-        final days = (data['durationInDays'] as num?)?.toInt() ?? 1;
-        if (type.contains('annual')) usedAnnual += days;
-        else if (type.contains('sick')) usedSick += days;
+      if (status == 'approved' || status == 'pending') {
+        final type = (data['leaveType'] ?? data['type'] ?? 'Annual Leave').toString().toLowerCase();
+        final fromDate = parseDate(data['fromDate'] ?? data['from'] ?? data['startDate']);
+        final toDate = parseDate(data['toDate'] ?? data['to'] ?? data['endDate']);
+        int days = 1;
+        if (fromDate != null && toDate != null) {
+          days = calculateWorkingDays(fromDate, toDate);
+        } else {
+          days = ((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1;
+        }
+        if (type.contains('sick')) usedSick += days;
         else if (type.contains('casual')) usedCasual += days;
+        else usedAnnual += days;
       }
     }
 
-    int maxAnnual = 15;
-    int maxSick = 10;
-    int maxCasual = 12;
+    int maxAnnual = AppSession().paidLeavesPerYear > 0 ? AppSession().paidLeavesPerYear : 18;
+    int maxSick = 7;
+    int maxCasual = 5;
 
     int totalUsed = usedAnnual + usedSick + usedCasual;
     int totalMax = maxAnnual + maxSick + maxCasual;
@@ -799,13 +869,21 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           color: Colors.white,
-          child: Row(
-            children: [
-              _buildHistorySubTab('Pending', 0),
-              _buildHistorySubTab('Approved', 1),
-              _buildHistorySubTab('Rejected', 2),
-              _buildHistorySubTab('Cancelled', 3),
-            ],
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildHistorySubTab('All', 0),
+                const SizedBox(width: 8),
+                _buildHistorySubTab('Pending', 1),
+                const SizedBox(width: 8),
+                _buildHistorySubTab('Approved', 2),
+                const SizedBox(width: 8),
+                _buildHistorySubTab('Rejected', 3),
+                const SizedBox(width: 8),
+                _buildHistorySubTab('Cancelled', 4),
+              ],
+            ),
           ),
         ),
         Expanded(
@@ -817,24 +895,22 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
 
   Widget _buildHistorySubTab(String label, int index) {
     final isActive = _selectedHistorySubTab == index;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedHistorySubTab = index),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: isActive ? AppTheme.primary : Colors.transparent, width: 2),
-            ),
+    return GestureDetector(
+      onTap: () => setState(() => _selectedHistorySubTab = index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: isActive ? AppTheme.primary : Colors.transparent, width: 2),
           ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                color: isActive ? AppTheme.primary : const Color(0xFF6B7280),
-              ),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+              color: isActive ? AppTheme.primary : const Color(0xFF6B7280),
             ),
           ),
         ),
@@ -843,13 +919,14 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
   }
 
   Widget _buildHistoryList(List<QueryDocumentSnapshot> requests) {
-    String filterStatus;
-    if (_selectedHistorySubTab == 0) filterStatus = 'pending';
-    else if (_selectedHistorySubTab == 1) filterStatus = 'approved';
-    else if (_selectedHistorySubTab == 2) filterStatus = 'rejected';
-    else filterStatus = 'cancelled';
+    String filterStatus = 'all';
+    if (_selectedHistorySubTab == 1) filterStatus = 'pending';
+    else if (_selectedHistorySubTab == 2) filterStatus = 'approved';
+    else if (_selectedHistorySubTab == 3) filterStatus = 'rejected';
+    else if (_selectedHistorySubTab == 4) filterStatus = 'cancelled';
 
     final filtered = requests.where((doc) {
+      if (filterStatus == 'all') return true;
       final status = ((doc.data() as Map)['status'] ?? '').toString().toLowerCase();
       return status == filterStatus.toLowerCase();
     }).toList();
@@ -913,15 +990,36 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
       return null;
     }
 
-    final fromDate = parseDate(data['fromDate']);
-    final toDate = parseDate(data['toDate']);
-    final requestDate = parseDate(data['requestDate']);
+    final fromDate = parseDate(data['fromDate'] ?? data['from']);
+    final toDate = parseDate(data['toDate'] ?? data['to']);
+    final requestDate = parseDate(data['requestDate'] ?? data['createdAt'] ?? data['applied']);
     
-    final dateRangeStr = (fromDate != null && toDate != null)
-        ? '${DateFormat('MMM d').format(fromDate)} – ${DateFormat('MMM d').format(toDate)}'
-        : 'Unknown Dates';
-    
-    final days = data['durationInDays'] ?? 1;
+    final int days = ((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1;
+    String leaveType = (data['leaveType'] ?? data['type'] ?? data['category'] ?? '').toString();
+    if (leaveType.isEmpty || leaveType.toLowerCase() == 'leave') {
+      final r = (data['reason'] ?? '').toString();
+      if (r.isNotEmpty && r.length < 25) {
+        leaveType = '${r[0].toUpperCase()}${r.substring(1)} Leave';
+      } else {
+        leaveType = 'Casual Leave';
+      }
+    }
+    final reason = (data['reason'] ?? '').toString();
+
+    String dateRangeStr = 'Unknown Dates';
+    if (fromDate != null) {
+      final fromStr = DateFormat('MMM d').format(fromDate);
+      if (toDate != null) {
+        if (fromDate.year == toDate.year && fromDate.month == toDate.month && fromDate.day == toDate.day) {
+          dateRangeStr = fromStr;
+        } else {
+          final toStr = DateFormat('MMM d').format(toDate);
+          dateRangeStr = '$fromStr – $toStr';
+        }
+      } else {
+        dateRangeStr = fromStr;
+      }
+    }
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -929,32 +1027,37 @@ class _UniversalLeaveTabState extends State<UniversalLeaveTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEEF2FF),
-                      shape: BoxShape.circle,
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.calendar_month, color: AppTheme.primary, size: 16),
                     ),
-                    child: const Icon(Icons.calendar_month, color: AppTheme.primary, size: 16),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(data['leaveType'] ?? 'Leave', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
-                      const SizedBox(height: 2),
-                      if (isCompact)
-                        Text('$dateRangeStr Â· $days${days > 1 ? 'd' : 'd'}', style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)))
-                      else
-                        Text('Applied ${requestDate != null ? DateFormat('MMM d').format(requestDate) : ''}', style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
-                    ],
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(leaveType, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary), overflow: TextOverflow.ellipsis),
+                          const SizedBox(height: 2),
+                          if (isCompact)
+                            Text('$dateRangeStr · ${days}d${reason.isNotEmpty ? ' · "$reason"' : ''}', style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)), overflow: TextOverflow.ellipsis)
+                          else
+                            Text('Applied ${requestDate != null ? DateFormat('MMM d').format(requestDate) : ''}${reason.isNotEmpty ? ' · "$reason"' : ''}', style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)), overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(

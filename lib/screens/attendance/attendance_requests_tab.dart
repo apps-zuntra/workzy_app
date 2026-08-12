@@ -47,14 +47,7 @@ class _AttendanceRequestsTabState extends State<AttendanceRequestsTab> {
   Widget _buildRequestsList() {
     // For employee: query their own leave_requests sub-collection
     // For manager/admin: query all leave_requests via collection group
-    final Stream<QuerySnapshot> stream;
-    if (_role == 'employee') {
-      stream = FirestoreService.userLeaveRequestsCol(_user?.email ?? '')
-          .snapshots();
-    } else {
-      stream = FirestoreService.allLeaveRequestsQuery
-          .snapshots();
-    }
+    final Stream<QuerySnapshot> stream = FirestoreService.leaveRequestsCol.snapshots();
 
     return StreamBuilder<QuerySnapshot>(
       stream: stream,

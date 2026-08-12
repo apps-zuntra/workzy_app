@@ -80,7 +80,22 @@ class _ApplyLeaveScreenState extends State<ApplyLeaveScreen> {
       final userName =
           userData['name'] ?? user?.email?.split('@')[0] ?? 'Employee';
       final department = userData['department'] ?? 'General';
-      final diff = toDate!.difference(fromDate!).inDays + 1;
+
+      int calculateWorkingDays(DateTime from, DateTime to) {
+        final start = DateTime(from.year, from.month, from.day);
+        final end = DateTime(to.year, to.month, to.day);
+        int count = 0;
+        DateTime current = start;
+        while (!current.isAfter(end)) {
+          if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+            count++;
+          }
+          current = current.add(const Duration(days: 1));
+        }
+        return count;
+      }
+
+      final diff = calculateWorkingDays(fromDate!, toDate!);
       final senderRole =
           (userData['role'] as String?)?.toLowerCase() ?? 'employee';
 

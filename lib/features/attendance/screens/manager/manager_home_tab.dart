@@ -823,9 +823,12 @@ class _ManagerHomeTabState extends State<ManagerHomeTab> {
           }),
           const SizedBox(height: 16),
           StreamBuilder<QuerySnapshot>(
-            stream: FirestoreService.allLeaveRequestsQuery.where('status', isEqualTo: 'pending').snapshots(),
+            stream: FirestoreService.leaveRequestsCol.snapshots(),
             builder: (context, leaveSnap) {
-              final leaveCount = leaveSnap.data?.docs.length ?? 0;
+              final leaveCount = (leaveSnap.data?.docs ?? []).where((d) {
+                final status = ((d.data() as Map)['status'] ?? 'pending').toString().toLowerCase();
+                return status == 'pending';
+              }).length;
               // Mock attendance and wfh counts for UI since exact queries might differ
               final attendanceCount = 2; // Mocked
               final wfhCount = 2; // Mocked

@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -83,9 +83,7 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen> {
           // List
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirestoreService.allLeaveRequestsQuery
-                  .where('status', isEqualTo: _selectedTab.toLowerCase())
-                  .snapshots(),
+              stream: FirestoreService.leaveRequestsCol.snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(
@@ -113,7 +111,16 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                final targetStatus = _selectedTab.toLowerCase();
+                final allDocs = snapshot.data?.docs ?? [];
+                final docs = allDocs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final status = (data['status'] ?? 'pending').toString().toLowerCase();
+                  if (targetStatus == 'all') return true;
+                  return status == targetStatus;
+                }).toList();
+
+                if (docs.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -131,13 +138,24 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen> {
                   );
                 }
 
+                DateTime? parseDate(dynamic d) {
+                  if (d == null) return null;
+                  if (d is Timestamp) return d.toDate();
+                  if (d is DateTime) return d;
+                  if (d is String) return DateTime.tryParse(d);
+                  return null;
+                }
+
                 // Sort in-memory to avoid index requirement
-                final docs = snapshot.data!.docs.toList()
-                  ..sort((a, b) {
-                    final aDate = (a.data() as Map<String, dynamic>)['requestDate'] as Timestamp?;
-                    final bDate = (b.data() as Map<String, dynamic>)['requestDate'] as Timestamp?;
-                    if (aDate == null) return 1;
-                    if (bDate == null) return -1;
+                docs.sort((a, b) {
+                  final aData = a.data() as Map<String, dynamic>;
+                  final bData = b.data() as Map<String, dynamic>;
+                  final aDate = parseDate(aData['requestDate'] ?? aData['fromDate'] ?? aData['from']);
+                  final bDate = parseDate(bData['requestDate'] ?? bData['fromDate'] ?? bData['from']);
+                  if (aDate == null) return 1;
+                  if (bDate == null) return -1;
+                  return bDate.compareTo(aDate);
+                });
                     return bDate.compareTo(aDate); // Sort descending
                   });
 
@@ -156,11 +174,21 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen> {
         ],
       ),
     );
-  }
-
   Widget _leaveCard(
       BuildContext context, DocumentReference docRef, Map<String, dynamic> data) {
-    final name = data['userName'] ?? 'Employee';
+    final name = (data['applicantName'] ??
+            data['employee'] ??
+            data['userName'] ??
+            data['empName'] ??
+            data['name'] ??
+            data['fullName'] ??
+            data['employeeName'] ??
+            (data['applicantEmail'] != null
+                ? data['applicantEmail'].toString().split('@').first
+                : (data['employeeEmail'] != null
+                    ? data['employeeEmail'].toString().split('@').first
+                    : 'Employee')))
+        .toString();
     final role = data['department'] ?? 'Team';
     final reason = data['reason'] ?? '';
     final leaveType = data['leaveType'] ?? 'Leave';

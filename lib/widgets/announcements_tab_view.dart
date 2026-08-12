@@ -603,8 +603,7 @@ class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
                     return StreamBuilder<QuerySnapshot>(
                       stream: FirestoreService.teamAnnouncementsCol.snapshots(),
                       builder: (context, teamSnap) {
-                        if (orgSnap.connectionState == ConnectionState.waiting &&
-                            teamSnap.connectionState == ConnectionState.waiting) {
+                        if (!orgSnap.hasData && !teamSnap.hasData) {
                           return const Center(child: CircularProgressIndicator());
                         }
                         final Map<String, DocumentSnapshot> combined = {};
@@ -619,7 +618,7 @@ class _AnnouncementsTabViewState extends State<AnnouncementsTabView> {
               : StreamBuilder<QuerySnapshot>(
                   stream: _announcementsStream,
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                    if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
                     if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
                     final allDocs = snapshot.data?.docs ?? [];
                     return _buildList(allDocs);

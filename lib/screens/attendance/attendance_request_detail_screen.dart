@@ -58,17 +58,19 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
           final data = doc.data() as Map<String, dynamic>;
           final status = (data['status'] ?? 'pending').toString().toLowerCase();
           
-          final submittedAt = data['submittedAt'] as Timestamp? ??
-              data['requestDate'] as Timestamp? ??
-              data['createdAt'] as Timestamp?;
-          final requestedDate = data['requestedDate'] as Timestamp? ??
-              data['startDate'] as Timestamp? ??
-              data['fromDate'] as Timestamp? ??
-              data['date'] as Timestamp? ??
-              data['checkInTime'] as Timestamp?;
+          DateTime? parseDate(dynamic d) {
+            if (d == null) return null;
+            if (d is Timestamp) return d.toDate();
+            if (d is DateTime) return d;
+            if (d is String) return DateTime.tryParse(d);
+            return null;
+          }
+
+          final submittedAt = parseDate(data['submittedAt'] ?? data['requestDate'] ?? data['createdAt']);
+          final requestedDate = parseDate(data['requestedDate'] ?? data['startDate'] ?? data['fromDate'] ?? data['date'] ?? data['checkInTime']);
           
           final manager = data['managerName'] as String? ?? data['approvedBy'] as String? ?? 'Pending';
-          final lastUpdated = data['approvedAt'] as Timestamp? ?? submittedAt;
+          final lastUpdated = parseDate(data['approvedAt']) ?? submittedAt;
           final reason = data['reason'] as String? ?? 'No reason provided';
           final isOwn = data['userId'] == FirebaseAuth.instance.currentUser?.uid ||
                         data['userEmail'] == FirebaseAuth.instance.currentUser?.email;
@@ -162,7 +164,7 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoCard(Timestamp? submittedAt, Timestamp? requestedDate, String manager, Timestamp? lastUpdated) {
+  Widget _buildInfoCard(DateTime? submittedAt, DateTime? requestedDate, String manager, DateTime? lastUpdated) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -172,13 +174,13 @@ class AttendanceRequestDetailScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _infoRow('Submission Date', submittedAt != null ? DateFormat('dd MMM yyyy').format(submittedAt.toDate()) : 'N/A'),
+          _infoRow('Submission Date', submittedAt != null ? DateFormat('dd MMM yyyy').format(submittedAt) : 'N/A'),
           const Divider(height: 32, color: Color(0xFFF1F5F9)),
-          _infoRow('Requested Date', requestedDate != null ? DateFormat('dd MMM yyyy').format(requestedDate.toDate()) : 'N/A'),
+          _infoRow('Requested Date', requestedDate != null ? DateFormat('dd MMM yyyy').format(requestedDate) : 'N/A'),
           const Divider(height: 32, color: Color(0xFFF1F5F9)),
           _infoRow('Reporting Manager', manager),
           const Divider(height: 32, color: Color(0xFFF1F5F9)),
-          _infoRow('Last Updated', lastUpdated != null ? DateFormat('dd MMM yyyy').format(lastUpdated.toDate()) : 'N/A'),
+          _infoRow('Last Updated', lastUpdated != null ? DateFormat('dd MMM yyyy').format(lastUpdated) : 'N/A'),
         ],
       ),
     );

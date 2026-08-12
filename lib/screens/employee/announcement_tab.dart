@@ -14,6 +14,16 @@ class EmployeeAnnouncementTab extends StatefulWidget {
 class _EmployeeAnnouncementTabState extends State<EmployeeAnnouncementTab> {
   String _selectedFilter = 'All';
   final List<String> _filters = ['All', 'HR', 'Policy', 'Events', 'Reminders'];
+  late Stream<QuerySnapshot> _announcementsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _announcementsStream = FirestoreService.announcementsCol
+        .where('status', isEqualTo: 'published')
+        .orderBy('timestamp', descending: true)
+        .snapshots();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,14 +82,10 @@ class _EmployeeAnnouncementTabState extends State<EmployeeAnnouncementTab> {
   }
 
   Widget _buildAnnouncementsList() {
-    Query query = FirestoreService.announcementsCol
-        .where('status', isEqualTo: 'published')
-        .orderBy('timestamp', descending: true);
-        
     return StreamBuilder<QuerySnapshot>(
-      stream: query.snapshots() as Stream<QuerySnapshot<Object?>>,
+      stream: _announcementsStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
           return const Padding(
             padding: EdgeInsets.all(40),
             child: Center(child: CircularProgressIndicator()),
@@ -137,7 +143,8 @@ class _EmployeeAnnouncementTabState extends State<EmployeeAnnouncementTab> {
           padding: const EdgeInsets.only(bottom: 100),
           itemCount: filteredDocs.length,
           itemBuilder: (context, index) {
-            return _buildAnnouncementCard(filteredDocs[index]);
+            final doc = filteredDocs[index];
+            return _buildAnnouncementCard(doc, key: ValueKey(doc.id));
           },
         );
       },
@@ -157,7 +164,7 @@ class _EmployeeAnnouncementTabState extends State<EmployeeAnnouncementTab> {
     }).catchError((error) => debugPrint("Failed to update likes: $error"));
   }
 
-  Widget _buildAnnouncementCard(DocumentSnapshot doc) {
+  Widget _buildAnnouncementCard(DocumentSnapshot doc, {Key? key}) {
     final data = doc.data() as Map<String, dynamic>;
     final tag = (data['category'] ?? 'General').toString();
     final lowerTag = tag.toLowerCase();
@@ -188,6 +195,7 @@ class _EmployeeAnnouncementTabState extends State<EmployeeAnnouncementTab> {
     }
 
     return Container(
+      key: key,
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(

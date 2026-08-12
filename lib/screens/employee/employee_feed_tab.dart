@@ -92,8 +92,9 @@ class _EmployeeFeedTabState extends State<EmployeeFeedTab> {
                 final filteredDocs = rawDocs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   final dept = (data['department'] ?? '').toString().trim().toLowerCase();
-                  if (myDept.isEmpty || AppSession().isSuperAdmin) return true;
-                  return dept == myDept || dept.isEmpty;
+                  if (AppSession().isSuperAdmin) return true;
+                  if (myDept.isEmpty) return false;
+                  return dept == myDept;
                 }).toList();
 
                 if (filteredDocs.isEmpty) {
@@ -136,9 +137,17 @@ class _EmployeeFeedTabState extends State<EmployeeFeedTab> {
                         final isMe = (senderEmail == myEmail);
                         final senderName = data['author'] ?? data['name'] ?? (isMe ? 'Me' : 'Colleague');
                         final text = data['content'] ?? data['text'] ?? '';
-                        final ts = data['timestamp'] as Timestamp?;
-                        final time = ts != null
-                            ? DateFormat('hh:mm a').format(ts.toDate())
+                        DateTime? parseDate(dynamic d) {
+                          if (d == null) return null;
+                          if (d is Timestamp) return d.toDate();
+                          if (d is DateTime) return d;
+                          if (d is int) return DateTime.fromMillisecondsSinceEpoch(d);
+                          if (d is String) return DateTime.tryParse(d);
+                          return null;
+                        }
+                        final tsVal = parseDate(data['timestamp'] ?? data['createdAt']);
+                        final time = tsVal != null
+                            ? DateFormat('hh:mm a').format(tsVal)
                             : 'Now';
 
                         final initials = _getInitials(senderName);

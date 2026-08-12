@@ -221,9 +221,9 @@ class FirestoreService {
   static CollectionReference<Map<String, dynamic>> get tasksCol =>
       companyDoc().collection('tasks');
 
-  /// `/organizations/{companyId}/feed_posts`
+  /// `/organizations/{companyId}/team_feed` — unified feed (was feed_posts, now same as teamFeedCol)
   static CollectionReference<Map<String, dynamic>> get feedPostsCol =>
-      companyDoc().collection('feed_posts');
+      companyDoc().collection('team_feed');
 
   /// `/organizations/{companyId}/team_feed`
   static CollectionReference<Map<String, dynamic>> get teamFeedCol =>

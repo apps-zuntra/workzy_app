@@ -26,13 +26,12 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
   @override
   void initState() {
     super.initState();
-    final userEmail = user?.email ?? AppSession().email ?? '';
-    _leaveRequestsStream =
-        FirestoreService.userLeaveRequestsCol(userEmail).snapshots();
+    _leaveRequestsStream = FirestoreService.leaveRequestsCol.snapshots();
   }
 
   @override
   Widget build(BuildContext context) {
+    final userEmail = (user?.email ?? AppSession().email ?? '').toLowerCase();
     return StreamBuilder<QuerySnapshot>(
       stream: _leaveRequestsStream,
       builder: (context, snapshot) {
@@ -43,7 +42,21 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
-        final docs = snapshot.data!.docs.toList();
+        // Filter by email client-side to support all field name variants
+        final currentCompanyId = AppSession().companyId;
+        final allDocs = snapshot.data?.docs ?? [];
+        final docs = allDocs.where((doc) {
+          final d = doc.data() as Map<String, dynamic>;
+          final docCompanyId = d['companyId'] as String?;
+          if (docCompanyId != null && currentCompanyId != null && docCompanyId != currentCompanyId) {
+            return false;
+          }
+          final e1 = (d['applicantEmail'] ?? '').toString().toLowerCase();
+          final e2 = (d['employeeEmail'] ?? '').toString().toLowerCase();
+          final e3 = (d['email'] ?? '').toString().toLowerCase();
+          return e1 == userEmail || e2 == userEmail || e3 == userEmail;
+        }).toList();
+
         DateTime? parseDate(dynamic d) {
           if (d is Timestamp) return d.toDate();
           if (d is DateTime) return d;
@@ -55,8 +68,8 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
           final aData = a.data() as Map<String, dynamic>;
           final bData = b.data() as Map<String, dynamic>;
           
-          final aDate = parseDate(aData['fromDate']);
-          final bDate = parseDate(bData['fromDate']);
+          final aDate = parseDate(aData['fromDate'] ?? aData['from']);
+          final bDate = parseDate(bData['fromDate'] ?? bData['from']);
           
           if (aDate == null && bDate == null) return 0;
           if (aDate == null) return 1;
@@ -71,11 +84,13 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
         // Filter the list for the history section
         List<QueryDocumentSnapshot> filteredDocs = docs;
         if (_selectedFilter != 'All') {
+          final target = _selectedFilter.toLowerCase().replaceAll(' leave', '').trim();
           filteredDocs = docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            final type = (data['leaveType'] as String? ?? '').toLowerCase();
-            final target = _selectedFilter.toLowerCase().replaceAll(' leave', '');
-            return type.contains(target);
+            final type = (data['leaveType'] ?? data['type'] ?? data['category'] ?? '').toString().toLowerCase();
+            if (type.contains(target)) return true;
+            if ((type.isEmpty || type == 'leave') && target == 'annual') return true;
+            return false;
           }).toList();
         }
 
@@ -193,19 +208,52 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
   int _calculateUsed(List<QueryDocumentSnapshot> docs, String typeKeyword) {
     int total = 0;
     final currentYear = DateTime.now().year;
+    final target = typeKeyword.toLowerCase();
+
+    int calculateWorkingDays(DateTime from, DateTime to) {
+      final start = DateTime(from.year, from.month, from.day);
+      final end = DateTime(to.year, to.month, to.day);
+      int count = 0;
+      DateTime current = start;
+      while (!current.isAfter(end)) {
+        if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+          count++;
+        }
+        current = current.add(const Duration(days: 1));
+      }
+      return count;
+    }
+
+    DateTime? parseDate(dynamic d) {
+      if (d == null) return null;
+      if (d is Timestamp) return d.toDate();
+      if (d is DateTime) return d;
+      if (d is String) return DateTime.tryParse(d);
+      return null;
+    }
+
     for (var doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
-      final leaveType = (data['leaveType'] as String? ?? '').toLowerCase();
-      final status = (data['status'] as String? ?? '').toLowerCase();
-      if (leaveType.contains(typeKeyword.toLowerCase()) && status == 'approved') {
-        DateTime? start;
-        final rawDate = data['fromDate'];
-        if (rawDate is Timestamp) start = rawDate.toDate();
-        else if (rawDate is DateTime) start = rawDate;
-        else if (rawDate is String) start = DateTime.tryParse(rawDate);
+      final leaveType = (data['leaveType'] ?? data['type'] ?? 'Annual Leave').toString().toLowerCase();
+      final status = (data['status'] ?? '').toString().toLowerCase();
+      
+      bool matches = leaveType.contains(target);
+      if (!matches && (leaveType == 'leave' || leaveType.isEmpty)) {
+        if (target == 'annual') matches = true;
+      }
+
+      if (matches && status == 'approved') {
+        final start = parseDate(data['fromDate'] ?? data['from'] ?? data['startDate']);
+        final end = parseDate(data['toDate'] ?? data['to'] ?? data['endDate']);
 
         if (start == null || start.year == currentYear) {
-          total += (data['durationInDays'] as num?)?.toInt() ?? 1;
+          int days = 1;
+          if (start != null && end != null) {
+            days = calculateWorkingDays(start, end);
+          } else {
+            days = ((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1;
+          }
+          total += days;
         }
       }
     }
@@ -309,10 +357,20 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
 
   Widget _buildLeaveHistoryCard(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    final leaveType = data['leaveType'] as String? ?? 'Leave';
+    String leaveType = (data['leaveType'] ?? data['type'] ?? data['category'] ?? '').toString();
+    if (leaveType.isEmpty || leaveType.toLowerCase() == 'leave') {
+      final r = (data['reason'] ?? '').toString();
+      if (r.isNotEmpty && r.length < 25) {
+        leaveType = '${r[0].toUpperCase()}${r.substring(1)} Leave';
+      } else {
+        leaveType = 'Casual Leave';
+      }
+    }
+
+    final reason = (data['reason'] ?? '').toString();
+    final applicant = (data['applicantName'] ?? data['employee'] ?? data['userName'] ?? '').toString();
     final status = (data['status'] as String? ?? 'pending').toLowerCase();
     
-    // Status UI Configuration
     Color statusBgColor = const Color(0xFFF3F4F6);
     Color statusTextColor = const Color(0xFF6B7280);
     String statusText = 'Pending';
@@ -327,7 +385,6 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
       statusText = 'Rejected';
     }
 
-    // Date formatting
     String dateRangeStr = '';
     DateTime? parseDate(dynamic d) {
       if (d is Timestamp) return d.toDate();
@@ -336,20 +393,18 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
       return null;
     }
 
-    final fromDate = parseDate(data['fromDate']);
-    final toDate = parseDate(data['toDate']);
-    final duration = (data['durationInDays'] as num?)?.toInt() ?? 1;
+    final fromDate = parseDate(data['fromDate'] ?? data['from']);
+    final toDate = parseDate(data['toDate'] ?? data['to']);
+    final duration = ((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1;
     
     if (fromDate != null) {
       final fromStr = DateFormat('MMM d, yyyy').format(fromDate);
-      
       if (toDate != null) {
-        // If same day
         if (fromDate.year == toDate.year && fromDate.month == toDate.month && fromDate.day == toDate.day) {
           dateRangeStr = '$fromStr · $duration day${duration > 1 ? 's' : ''}';
         } else {
           final toStr = DateFormat('MMM d, yyyy').format(toDate);
-          dateRangeStr = '$fromStr \u2192 $toStr · $duration day${duration > 1 ? 's' : ''}';
+          dateRangeStr = '$fromStr → $toStr · $duration day${duration > 1 ? 's' : ''}';
         }
       } else {
         dateRangeStr = '$fromStr · $duration day${duration > 1 ? 's' : ''}';
@@ -379,15 +434,29 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
                     color: Color(0xFF1F2937),
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
                   dateRangeStr,
                   style: const TextStyle(
                     fontSize: 11,
-                    color: Color(0xFF9CA3AF),
+                    color: Color(0xFF6B7280),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
+                if (applicant.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Applicant: $applicant',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500),
+                  ),
+                ],
+                if (reason.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Reason: "$reason"',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF4B5563), fontStyle: FontStyle.italic),
+                  ),
+                ],
               ],
             ),
           ),

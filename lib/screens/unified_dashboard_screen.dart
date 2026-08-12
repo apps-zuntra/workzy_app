@@ -88,7 +88,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
   StreamSubscription? _subActivityLeaves, _subActivityAtt;
 
   // Approvals Real-time State
-  List<DocumentSnapshot>? _cachedApprovals;
+  List<DocumentSnapshot>? _cachedApprovals = [];
   StreamSubscription? _subLeaves, _subAtt, _subShifts, _subDepts, _subTasks;
   StreamSubscription? _subEmployeesMap;
   Map<String, Map<String, dynamic>> _empMap = {};
@@ -274,15 +274,20 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         shiftPending = 0,
         deptPending = 0,
         taskPending = 0;
+    int lastPendingCount = 0;
     final pendingController = StreamController<int>.broadcast();
+    pendingController.onListen = () {
+      pendingController.add(lastPendingCount);
+    };
 
     void emitPending() {
       if (!pendingController.isClosed) {
-        pendingController.add(leavePending +
+        lastPendingCount = leavePending +
             attPending +
             shiftPending +
             deptPending +
-            taskPending);
+            taskPending;
+        pendingController.add(lastPendingCount);
       }
     }
 
@@ -331,6 +336,10 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     final todayDate =
         DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     final statsController = StreamController<Map<String, int>>.broadcast();
+    Map<String, int> lastStatsMap = {'present': 0, 'wfh': 0, 'onLeave': 0};
+    statsController.onListen = () {
+      statsController.add(lastStatsMap);
+    };
     List<DocumentSnapshot> statAttDocs = [];
     List<DocumentSnapshot> statLeaveDocs = [];
 
@@ -349,15 +358,15 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
       for (final doc in statLeaveDocs) {
         final data = doc.data() as Map<String, dynamic>? ?? {};
         try {
-          final fromTs = data['fromDate'];
-          final toTs = data['toDate'];
-          if (fromTs == null || toTs == null) continue;
+          final fromTs = data['fromDate'] ?? data['from'];
+          final toTs = data['toDate'] ?? data['to'];
+          if (fromTs == null) continue;
           DateTime? from = fromTs is Timestamp
               ? fromTs.toDate()
               : DateTime.tryParse(fromTs.toString());
           DateTime? to = toTs is Timestamp
               ? toTs.toDate()
-              : DateTime.tryParse(toTs.toString());
+              : (toTs != null ? DateTime.tryParse(toTs.toString()) : from);
           if (from != null && to != null) {
             final fromDate = DateTime(from.year, from.month, from.day);
             final toDate = DateTime(to.year, to.month, to.day);
@@ -366,7 +375,8 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
           }
         } catch (_) {}
       }
-      statsController.add({'present': present, 'wfh': wfh, 'onLeave': onLeave});
+      lastStatsMap = {'present': present, 'wfh': wfh, 'onLeave': onLeave};
+      statsController.add(lastStatsMap);
     }
 
     _subStatsAtt =
@@ -379,7 +389,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         .listen((snap) {
       statLeaveDocs = snap.docs.where((d) {
         final data = d.data() as Map;
-        return data['status'] == 'approved' && data['companyId'] == orgId;
+        return (data['status'] ?? '').toString().toLowerCase() == 'approved' && data['companyId'] == orgId;
       }).toList();
       emitStats();
     }, onError: (_) {});
@@ -392,6 +402,11 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     List<Map<String, dynamic>> actLeaves = [];
     List<Map<String, dynamic>> actAtts = [];
     List<Map<String, dynamic>> actEmployees = [];
+    List<Map<String, dynamic>> lastActivityList = [];
+
+    activityController.onListen = () {
+      activityController.add(lastActivityList);
+    };
 
     void emitActivity() {
       if (activityController.isClosed) return;
@@ -404,7 +419,15 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         if (tb == null) return -1;
         return tb.compareTo(ta);
       });
-      activityController.add(combined.take(6).toList());
+      lastActivityList = combined.take(6).toList();
+      activityController.add(lastActivityList);
+    }
+
+    DateTime? parseTs(dynamic val) {
+      if (val is Timestamp) return val.toDate();
+      if (val is DateTime) return val;
+      if (val is String) return DateTime.tryParse(val);
+      return null;
     }
 
     _subActivityLeaves = FirestoreService.allLeaveRequestsQuery
@@ -414,17 +437,17 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
       final validDocs = snap.docs.where((d) => (d.data() as Map)['companyId'] == orgId);
       actLeaves = validDocs.map((doc) {
         final d = doc.data() as Map<String, dynamic>;
-        final ts = d['createdAt'] as Timestamp?;
-        final name = d['userName'] ?? d['empName'] ?? 'Employee';
-        final leaveType = (d['leaveType'] as String? ?? 'Leave').toUpperCase();
-        final status = d['status'] as String? ?? 'pending';
+        final ts = parseTs(d['createdAt'] ?? d['requestDate'] ?? d['applied']);
+        final name = d['userName'] ?? d['empName'] ?? d['applicantName'] ?? d['employee'] ?? 'Employee';
+        final leaveType = (d['leaveType'] ?? d['type'] ?? 'Leave').toString().toUpperCase();
+        final status = (d['status'] ?? 'pending').toString().toLowerCase();
         final statusLabel = status == 'approved'
             ? 'approved'
             : status == 'rejected'
                 ? 'rejected'
                 : 'applied for';
         return {
-          '_ts': ts?.toDate(),
+          '_ts': ts,
           'text': '$name $statusLabel $leaveType leave',
           'icon': Icons.event_available_outlined,
           'color': status == 'approved'
@@ -448,11 +471,11 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         .listen((snap) {
       actAtts = snap.docs.map((doc) {
         final d = doc.data() as Map<String, dynamic>;
-        final ts = d['createdAt'] as Timestamp?;
+        final ts = parseTs(d['createdAt'] ?? d['requestDate']);
         final name = d['userName'] ?? d['empName'] ?? 'Employee';
-        final status = d['status'] as String? ?? 'pending';
+        final status = (d['status'] ?? 'pending').toString().toLowerCase();
         return {
-          '_ts': ts?.toDate(),
+          '_ts': ts,
           'text': status == 'pending'
               ? '$name requested attendance correction'
               : 'Attendance ${status == 'approved' ? 'correction approved for' : 'correction rejected for'} $name',
@@ -473,12 +496,11 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     }, onError: (_) {});
 
     _recentActivityStream = activityController.stream;
-    _allTasksStream = FirestoreService.allTasksQuery.snapshots();
+    _allTasksStream = FirestoreService.tasksCol.snapshots();
     _employeesStream = FirestoreService.employeesCol.snapshots();
 
     final userEmail = AppSession().email ?? '';
     _myAttendanceStream = FirestoreService.userAttendanceCol(userEmail).snapshots();
-
     _subEmployeesMap = _employeesStream.listen((snap) {
       final newMap = <String, Map<String, dynamic>>{};
       
@@ -537,26 +559,13 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         ...depts,
         ...tasks
       ];
-      allDocs.sort((a, b) {
-        final ta =
-            (a.data() as Map<String, dynamic>?)?['createdAt'] as Timestamp?;
-        final tb =
-            (b.data() as Map<String, dynamic>?)?['createdAt'] as Timestamp?;
-        if (ta == null && tb == null) return 0;
-        if (ta == null) return 1;
-        if (tb == null) return -1;
-        return tb.compareTo(ta);
-      });
       setState(() {
         _cachedApprovals = allDocs;
       });
     }
 
-    _subLeaves = FirestoreService.allLeaveRequestsQuery.snapshots().listen((s) {
-      leaves = s.docs.where((d) {
-        final data = d.data() as Map;
-        return data['companyId'] == orgId;
-      }).toList();
+    _subLeaves = FirestoreService.leaveRequestsCol.snapshots().listen((s) {
+      leaves = s.docs;
       update();
     }, onError: (_) {});
     _subAtt =
@@ -1046,20 +1055,17 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
 
                   List<Widget> listItems = [];
 
-                  final pendingDocs = filteredDocs
-                      .where((d) =>
-                          (d.data() as Map<String, dynamic>?)?['status'] ==
-                              'pending' ||
-                          (d.data() as Map<String, dynamic>?)?['status'] ==
-                              null)
-                      .toList();
-                  final processedDocs = filteredDocs
-                      .where((d) =>
-                          (d.data() as Map<String, dynamic>?)?['status'] !=
-                              'pending' &&
-                          (d.data() as Map<String, dynamic>?)?['status'] !=
-                              null)
-                      .toList();
+                  final pendingDocs = filteredDocs.where((d) {
+                    final data = d.data() as Map<String, dynamic>? ?? {};
+                    final status = (data['status'] ?? 'pending').toString().trim().toLowerCase();
+                    return status == 'pending';
+                  }).toList();
+
+                  final processedDocs = filteredDocs.where((d) {
+                    final data = d.data() as Map<String, dynamic>? ?? {};
+                    final status = (data['status'] ?? 'pending').toString().trim().toLowerCase();
+                    return status == 'approved' || status == 'rejected';
+                  }).toList();
 
                   if (pendingDocs.isNotEmpty) {
                     listItems.add(Padding(
@@ -1108,10 +1114,34 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
   }
 
   Map<String, String> _resolveEmployeeInfo(DocumentSnapshot doc, Map<String, dynamic> data) {
-    String? name = (data['userName'] ?? data['empName'] ?? data['name'] ?? data['fullName'] ?? data['employeeName'])?.toString();
-    String? dept = (data['department'] ?? data['empDept'] ?? data['dept'] ?? data['role'] ?? data['designation'])?.toString();
+    String? name = (data['applicantName'] ??
+            data['employee'] ??
+            data['userName'] ??
+            data['empName'] ??
+            data['name'] ??
+            data['fullName'] ??
+            data['employeeName'] ??
+            data['user'] ??
+            data['requestedBy'] ??
+            data['appliedBy'])
+        ?.toString();
+    String? dept = (data['department'] ??
+            data['empDept'] ??
+            data['dept'] ??
+            data['role'] ??
+            data['designation'])
+        ?.toString();
 
-    String identifier = (data['userEmail'] ?? data['email'] ?? data['userId'] ?? data['empId'] ?? '').toString().trim().toLowerCase();
+    String identifier = (data['applicantEmail'] ??
+            data['employeeEmail'] ??
+            data['userEmail'] ??
+            data['email'] ??
+            data['userId'] ??
+            data['empId'] ??
+            '')
+        .toString()
+        .trim()
+        .toLowerCase();
     if (identifier.isEmpty) {
       final parts = doc.reference.path.split('/');
       final usersIdx = parts.indexOf('users');
@@ -1153,6 +1183,14 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     final data = doc.data() as Map<String, dynamic>? ?? {};
     final colName = doc.reference.parent.id;
 
+    DateTime? parseApprovalDate(dynamic d) {
+      if (d == null) return null;
+      if (d is Timestamp) return d.toDate();
+      if (d is DateTime) return d;
+      if (d is String) return DateTime.tryParse(d);
+      return null;
+    }
+
     String title = 'Request';
     String details = '';
     String tag = 'Request';
@@ -1170,17 +1208,18 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
           ? 'Work From Home Request'
           : '${rawType.isEmpty ? "Leave" : (rawType[0].toUpperCase() + rawType.substring(1).toLowerCase())} Request';
 
-      String sDate = '-';
-      if (data['startDate'] is Timestamp)
-        sDate = DateFormat('MMM d, yyyy')
-            .format((data['startDate'] as Timestamp).toDate());
-      else if (data['startDate'] != null) sDate = data['startDate'].toString();
+      final startVal = data['startDate'] ?? data['fromDate'] ?? data['from'];
+      final endVal = data['endDate'] ?? data['toDate'] ?? data['to'];
 
-      String eDate = '-';
-      if (data['endDate'] is Timestamp)
-        eDate = DateFormat('MMM d, yyyy')
-            .format((data['endDate'] as Timestamp).toDate());
-      else if (data['endDate'] != null) eDate = data['endDate'].toString();
+      final startDt = parseApprovalDate(startVal);
+      final endDt = parseApprovalDate(endVal);
+
+      final sDate = startDt != null
+          ? DateFormat('MMM d, yyyy').format(startDt)
+          : (startVal?.toString() ?? '-');
+      final eDate = endDt != null
+          ? DateFormat('MMM d, yyyy').format(endDt)
+          : (endVal?.toString() ?? '-');
 
       final reason = data['reason']?.toString().trim() ??
           data['notes']?.toString().trim() ??
@@ -1199,12 +1238,11 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     } else if (colName == 'attendance_corrections') {
       title = 'Attendance Correction';
 
-      String aDate = '-';
-      if (data['attendanceDate'] is Timestamp)
-        aDate = DateFormat('MMM d, yyyy')
-            .format((data['attendanceDate'] as Timestamp).toDate());
-      else if (data['attendanceDate'] != null)
-        aDate = data['attendanceDate'].toString();
+      final attVal = data['attendanceDate'] ?? data['requestedDate'] ?? data['date'];
+      final attDt = parseApprovalDate(attVal);
+      final aDate = attDt != null
+          ? DateFormat('MMM d, yyyy').format(attDt)
+          : (attVal?.toString() ?? '-');
 
       final reason = data['reason']?.toString().trim() ?? '';
       details = '$aDate${reason.isNotEmpty ? ' · Reason: $reason' : ''}';
@@ -1243,12 +1281,13 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     final empName = empInfo['name'] ?? 'Employee';
     final empDept = empInfo['dept'] ?? 'Department';
     final initials = _getInitials(empName);
-    final status = data['status'] ?? 'pending';
+    final rawStatus = (data['status'] ?? 'pending').toString().trim().toLowerCase();
+    final status = rawStatus.isEmpty ? 'pending' : rawStatus;
 
-    final createdTs = data['createdAt'] as Timestamp?;
-    final dateStr = createdTs != null
-        ? DateFormat('MMM d').format(createdTs.toDate())
-        : 'Unknown date';
+    final createdDt = parseApprovalDate(data['createdAt'] ?? data['requestDate'] ?? data['applied']);
+    final dateStr = createdDt != null
+        ? DateFormat('MMM d').format(createdDt)
+        : 'Recent';
     final subtitle = '$empDept · Applied $dateStr';
 
     Map<String, dynamic> detailData = {
@@ -2550,7 +2589,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _allTasksStream,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
           return _buildCardContainer(
             child: const Center(
                 child: Padding(
@@ -2561,16 +2600,18 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         }
 
         final allDocs = snapshot.data?.docs ?? [];
-        final userEmail = FirebaseAuth.instance.currentUser?.email?.toLowerCase();
+        final userEmail = (user?.email ?? AppSession().email ?? FirebaseAuth.instance.currentUser?.email ?? '').trim().toLowerCase();
         
         final activeDocs = allDocs.where((d) {
           final data = d.data() as Map<String, dynamic>;
-          final s = data['status'] as String? ?? '';
+          final s = (data['status'] as String? ?? 'assigned').toLowerCase();
           
-          final assignedTo = (data['assignedTo'] as String?)?.toLowerCase() ?? '';
-          if (userEmail != null && userEmail.isNotEmpty && assignedTo != userEmail) return false;
+          final assignedTo = (data['assignedTo'] ?? data['assignedToEmail'] ?? data['userEmail'] ?? data['email'] ?? '').toString().trim().toLowerCase();
           
-          return s == 'assigned' || s == 'in_progress' || s == 'overdue';
+          bool isMine = AppSession().isSuperAdmin || (userEmail.isNotEmpty && (assignedTo == userEmail || assignedTo.contains(userEmail) || userEmail.contains(assignedTo)));
+          if (!isMine) return false;
+          
+          return s == 'assigned' || s == 'todo' || s == 'in_progress' || s == 'overdue' || s == 'pending';
         }).toList();
 
         // Show most recent 4
@@ -2605,7 +2646,13 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              if (displayDocs.isEmpty)
+              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData)
+                const Center(
+                    child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: CircularProgressIndicator(),
+                ))
+              else if (displayDocs.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
                   child: Center(
@@ -2620,18 +2667,27 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                   final data = doc.data() as Map<String, dynamic>;
                   final title = data['title'] as String? ?? 'Untitled Task';
                   final status = data['status'] as String? ?? 'assigned';
-                  final dueDateTs = data['dueDate'] as Timestamp?;
-                  final timerStartTs = data['timerStart'] as Timestamp?;
+
+                  DateTime? parseDate(dynamic d) {
+                    if (d == null) return null;
+                    if (d is Timestamp) return d.toDate();
+                    if (d is DateTime) return d;
+                    if (d is String) return DateTime.tryParse(d);
+                    return null;
+                  }
+
+                  final dueDate = parseDate(data['dueDate']);
+                  final timerStart = parseDate(data['timerStart']);
 
                   String dueDateStr = 'No due date';
-                  if (dueDateTs != null) {
+                  if (dueDate != null) {
                     dueDateStr =
-                        'Due ${DateFormat('MMM d, yyyy').format(dueDateTs.toDate())}';
+                        'Due ${DateFormat('MMM d, yyyy').format(dueDate)}';
                   }
 
                   String? timerStr;
-                  if (status == 'in_progress' && timerStartTs != null) {
-                    timerStr = _formatTaskDuration(timerStartTs.toDate());
+                  if (status == 'in_progress' && timerStart != null) {
+                    timerStr = _formatTaskDuration(timerStart);
                   }
 
                   Color badgeColor;
@@ -2899,7 +2955,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                       color: Color(0xFF6B7280),
                       letterSpacing: 0.5)),
               const SizedBox(height: 16),
-              if (snapshot.connectionState == ConnectionState.waiting)
+              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData)
                 const Center(
                     child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),

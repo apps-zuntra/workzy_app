@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:intl/intl.dart';
 import 'package:attendance_app/screens/employee/employee_profile_screen.dart';
+import 'package:attendance_app/utils/app_session.dart';
 
 class EmployeeTeamMembersTab extends StatefulWidget {
   const EmployeeTeamMembersTab({super.key});
@@ -26,128 +27,140 @@ class _EmployeeTeamMembersTabState extends State<EmployeeTeamMembersTab> {
           .doc(FirestoreService.companyId)
           .collection('users')
           .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData)
+      builder: (context, userSnap) {
+        if (!userSnap.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
 
-        final docs = snapshot.data!.docs;
-        final currentUserEmail = (AppSession().email ?? '').toLowerCase();
-        String myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
-        if (myDept.isEmpty) {
-          for (var doc in docs) {
-            final data = doc.data() as Map<String, dynamic>;
-            final email = (data['email'] ?? doc.id).toString().toLowerCase();
-            if (email == currentUserEmail) {
-              myDept = (data['department'] ?? '').toString().trim().toLowerCase();
-              break;
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirestoreService.leaveRequestsCol.snapshots(),
+          builder: (context, leaveSnap) {
+            final docs = userSnap.data!.docs;
+            final leaves = leaveSnap.data?.docs ?? [];
+            final currentUserEmail = (AppSession().email ?? '').toLowerCase();
+            String myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
+            if (myDept.isEmpty) {
+              for (var doc in docs) {
+                final data = doc.data() as Map<String, dynamic>;
+                final email = (data['email'] ?? doc.id).toString().toLowerCase();
+                if (email == currentUserEmail) {
+                  myDept = (data['department'] ?? '').toString().trim().toLowerCase();
+                  break;
+                }
+              }
             }
-          }
-        }
 
-        List<Map<String, dynamic>> allUsers = [];
+            DateTime? parseDate(dynamic d) {
+              if (d == null) return null;
+              if (d is Timestamp) return d.toDate();
+              if (d is DateTime) return d;
+              if (d is String) return DateTime.tryParse(d);
+              return null;
+            }
 
-        for (var doc in docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          final dept = (data['department'] ?? '').toString().trim().toLowerCase();
+            final todayNorm = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
 
-          // Strict filter: non-super-admins ONLY see members in the exact same department
-          if (myDept.isNotEmpty && !AppSession().isSuperAdmin) {
-            if (dept != myDept) continue;
-          }
+            bool isUserOnLeaveToday(String email) {
+              final userEmail = email.toLowerCase().trim();
+              for (var doc in leaves) {
+                final data = doc.data() as Map<String, dynamic>;
+                final status = (data['status'] ?? '').toString().toLowerCase();
+                if (status == 'approved') {
+                  final from = parseDate(data['fromDate'] ?? data['startDate'] ?? data['from']);
+                  final to = parseDate(data['toDate'] ?? data['endDate'] ?? data['to']) ?? from;
+                  final docEmail = (data['applicantEmail'] ?? data['employeeEmail'] ?? data['email'] ?? '').toString().toLowerCase().trim();
+                  
+                  if (docEmail == userEmail && from != null) {
+                    final targetTo = to ?? from;
+                    final fromNorm = DateTime(from.year, from.month, from.day);
+                    final toNorm = DateTime(targetTo.year, targetTo.month, targetTo.day);
+                    if (!todayNorm.isBefore(fromNorm) && !todayNorm.isAfter(toNorm)) {
+                      return true;
+                    }
+                  }
+                }
+              }
+              return false;
+            }
 
-          allUsers.add({
-            'email': data['email'] ?? doc.id,
-            'firstName': data['firstName'] ?? data['name'] ?? '',
-            'lastName': data['lastName'] ?? '',
-            'role': data['role'] ?? data['designation'] ?? 'Employee',
-            'department': data['department'] ?? '',
-            'reportingManager': data['reportingManager'] ?? '',
-          });
-        }
+            List<Map<String, dynamic>> allUsers = [];
 
-        if (allUsers.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.all(32.0),
-            child: Center(
-              child: Text(
-                'No members found in your department.',
-                style: TextStyle(fontSize: 14, color: Color(0xFF6B7280), fontWeight: FontWeight.w500),
-              ),
-            ),
-          );
-        }
+            for (var doc in docs) {
+              final data = doc.data() as Map<String, dynamic>;
+              final dept = (data['department'] ?? '').toString().trim().toLowerCase();
 
-        // Identify team lead (for demo, first user with 'Lead' in role, or just the first user)
-        Map<String, dynamic>? lead;
-        final members = <Map<String, dynamic>>[];
+              // Strict filter: ONLY see members in the exact same department
+              if (myDept.isEmpty || dept != myDept) continue;
 
-        for (var u in allUsers) {
-          if (lead == null &&
-              u['role'].toString().toLowerCase().contains('lead')) {
-            lead = u;
-          } else {
-            members.add(u);
-          }
-        }
+              allUsers.add({
+                'email': data['email'] ?? doc.id,
+                'firstName': data['firstName'] ?? data['name'] ?? '',
+                'lastName': data['lastName'] ?? '',
+                'role': data['role'] ?? data['designation'] ?? 'Employee',
+                'department': data['department'] ?? '',
+                'reportingManager': data['reportingManager'] ?? '',
+              });
+            }
 
-        if (lead == null && members.isNotEmpty) {
-          lead = members.removeAt(0);
-        }
-
-        return ListView(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 100),
-          children: [
-            if (lead != null) _buildLeadCard(lead),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Team Members (${members.length})',
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF6B7280)),
+            if (allUsers.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.all(32.0),
+                child: Center(
+                  child: Text(
+                    'No members found in your department.',
+                    style: TextStyle(fontSize: 14, color: Color(0xFF6B7280), fontWeight: FontWeight.w500),
+                  ),
                 ),
+              );
+            }
+
+            // Identify team lead (for demo, first user with 'Lead' in role, or just the first user)
+            Map<String, dynamic>? lead;
+            final members = <Map<String, dynamic>>[];
+
+            for (var u in allUsers) {
+              if (lead == null &&
+                  u['role'].toString().toLowerCase().contains('lead')) {
+                lead = u;
+              } else {
+                members.add(u);
+              }
+            }
+
+            if (lead == null && members.isNotEmpty) {
+              lead = members.removeAt(0);
+            }
+
+            return ListView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 100),
+              children: [
+                if (lead != null) _buildLeadCard(lead, isUserOnLeaveToday(lead['email'])),
+                const SizedBox(height: 24),
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _statusSummaryDot(const Color(0xFF10B981), '4'),
-                    const SizedBox(width: 8),
-                    _statusSummaryDot(const Color(0xFFD97706), '1'),
-                    const SizedBox(width: 8),
-                    _statusSummaryDot(const Color(0xFF8B5CF6), '1'),
+                    Text(
+                      'Team Members (${members.length})',
+                      style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF6B7280)),
+                    ),
                   ],
                 ),
+                const SizedBox(height: 16),
+                ...members.map((m) => _buildMemberCard(m, isUserOnLeaveToday(m['email']))),
               ],
-            ),
-            const SizedBox(height: 16),
-            ...members.map((m) => _buildMemberCard(m)),
-          ],
+            );
+          },
         );
       },
     );
   }
 
-  Widget _statusSummaryDot(Color color, String count) {
-    return Row(
-      children: [
-        Container(
-            width: 6,
-            height: 6,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-        const SizedBox(width: 4),
-        Text(count,
-            style: const TextStyle(
-                fontSize: 12,
-                color: Color(0xFF9CA3AF),
-                fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
-
-  Widget _buildLeadCard(Map<String, dynamic> user) {
+  Widget _buildLeadCard(Map<String, dynamic> user, bool isOnLeave) {
     final f = user['firstName'].toString().isNotEmpty ? user['firstName'].toString()[0] : '';
     final l = user['lastName'].toString().isNotEmpty ? user['lastName'].toString()[0] : '';
     final initials = '$f$l'.toUpperCase();
@@ -159,26 +172,34 @@ class _EmployeeTeamMembersTabState extends State<EmployeeTeamMembersTab> {
         String badgeText = 'Absent';
         Color badgeColor = const Color(0xFF9CA3AF);
 
-        if (snapshot.hasData && snapshot.data!.exists) {
+        if (isOnLeave) {
+          statusText = 'On Leave';
+          badgeText = 'On Leave';
+          badgeColor = const Color(0xFF8B5CF6);
+        } else if (snapshot.hasData && snapshot.data!.exists) {
           final data = snapshot.data!.data() as Map<String, dynamic>;
           if (data['checkIn'] != null) {
-            final checkInTime = DateFormat('hh:mm a')
-                .format((data['checkIn'] as Timestamp).toDate());
-            statusText = 'In since $checkInTime';
-            badgeText = 'Present';
-            badgeColor = const Color(0xFF10B981);
+            DateTime? checkInDt;
+            final ciVal = data['checkIn'];
+            if (ciVal is Timestamp) checkInDt = ciVal.toDate();
+            else if (ciVal is DateTime) checkInDt = ciVal;
+            else if (ciVal is int) checkInDt = DateTime.fromMillisecondsSinceEpoch(ciVal);
+            else if (ciVal is String) checkInDt = DateTime.tryParse(ciVal);
 
-            if (data['workMode'] == 'wfh') {
+            final checkInTime = checkInDt != null ? DateFormat('hh:mm a').format(checkInDt) : 'N/A';
+            statusText = 'In since $checkInTime';
+            
+            final isLate = data['isLate'] == true || (data['status'] ?? '').toString().toLowerCase() == 'late';
+            if (isLate) {
+              badgeText = 'Late';
+              badgeColor = const Color(0xFFF59E0B);
+            } else if (data['workMode'] == 'wfh') {
               badgeText = 'WFH';
-              badgeColor = const Color(0xFF5C5CFF);
+              badgeColor = const Color(0xFF3B82F6);
+            } else {
+              badgeText = 'Present';
+              badgeColor = const Color(0xFF10B981);
             }
-          }
-        } else {
-          // Dummy data logic to match screenshot for the lead
-          if (user['firstName'] == 'Rahul') {
-            statusText = 'In since 08:50 AM';
-            badgeText = 'Present';
-            badgeColor = const Color(0xFF10B981);
           }
         }
 
@@ -274,7 +295,7 @@ class _EmployeeTeamMembersTabState extends State<EmployeeTeamMembersTab> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
+                            color: Colors.white.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Row(
@@ -309,12 +330,11 @@ class _EmployeeTeamMembersTabState extends State<EmployeeTeamMembersTab> {
     );
   }
 
-  Widget _buildMemberCard(Map<String, dynamic> user) {
+  Widget _buildMemberCard(Map<String, dynamic> user, bool isOnLeave) {
     final f = user['firstName'].toString().isNotEmpty ? user['firstName'].toString()[0] : '';
     final l = user['lastName'].toString().isNotEmpty ? user['lastName'].toString()[0] : '';
     final initials = '$f$l'.toUpperCase();
 
-    // Assigning color based on name length for visual variety
     final colors = [
       const Color(0xFF5C5CFF),
       const Color(0xFFF59E0B),
@@ -332,37 +352,27 @@ class _EmployeeTeamMembersTabState extends State<EmployeeTeamMembersTab> {
         Color badgeColor = const Color(0xFF9CA3AF);
         Color badgeBg = const Color(0xFFF3F4F6);
 
-        if (snapshot.hasData && snapshot.data!.exists) {
+        if (isOnLeave) {
+          badgeText = 'On Leave';
+          badgeColor = const Color(0xFF8B5CF6);
+          badgeBg = const Color(0xFFF5F3FF);
+        } else if (snapshot.hasData && snapshot.data!.exists) {
           final data = snapshot.data!.data() as Map<String, dynamic>;
           if (data['checkIn'] != null) {
-            badgeText = 'Present';
-            badgeColor = const Color(0xFF10B981);
-            badgeBg = const Color(0xFFECFDF5);
-
-            if (data['workMode'] == 'wfh') {
+            final isLate = data['isLate'] == true || (data['status'] ?? '').toString().toLowerCase() == 'late';
+            if (isLate) {
+              badgeText = 'Late';
+              badgeColor = const Color(0xFFF59E0B);
+              badgeBg = const Color(0xFFFFFBEB);
+            } else if (data['workMode'] == 'wfh') {
               badgeText = 'WFH';
               badgeColor = const Color(0xFF3B82F6);
               badgeBg = const Color(0xFFEFF6FF);
+            } else {
+              badgeText = 'Present';
+              badgeColor = const Color(0xFF10B981);
+              badgeBg = const Color(0xFFECFDF5);
             }
-          }
-        } else {
-          // Dummy data to match exactly the screenshot
-          if (user['firstName'] == 'Alex' || user['firstName'] == 'Raj') {
-            badgeText = 'Present';
-            badgeColor = const Color(0xFF10B981);
-            badgeBg = const Color(0xFFECFDF5);
-          } else if (user['firstName'] == 'Emma') {
-            badgeText = 'Late';
-            badgeColor = const Color(0xFFF59E0B);
-            badgeBg = const Color(0xFFFFFBEB);
-          } else if (user['firstName'] == 'Olivia') {
-            badgeText = 'WFH';
-            badgeColor = const Color(0xFF3B82F6);
-            badgeBg = const Color(0xFFEFF6FF);
-          } else if (user['firstName'] == 'Daniel') {
-            badgeText = 'On Leave';
-            badgeColor = const Color(0xFF8B5CF6);
-            badgeBg = const Color(0xFFF5F3FF);
           }
         }
 
@@ -438,9 +448,9 @@ class _EmployeeTeamMembersTabState extends State<EmployeeTeamMembersTab> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: badgeBg,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: badgeColor.withOpacity(0.5)),
+                    border: Border.all(color: badgeColor.withValues(alpha: 0.5)),
                   ),
                   child: Text(badgeText,
                       style: TextStyle(
