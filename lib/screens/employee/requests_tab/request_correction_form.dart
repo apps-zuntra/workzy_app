@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -106,14 +106,14 @@ class _RequestCorrectionFormState extends State<RequestCorrectionForm> {
         await FirebaseFirestore.instance
             .collection('organizations')
             .doc(FirestoreService.companyId)
-            .collection('attendance_corrections')
+            .collection('attendance_issues')
             .doc(widget.editItem!['id'])
             .update({...data, 'createdAt': widget.editItem!['submittedAt']});
       } else {
         await FirebaseFirestore.instance
             .collection('organizations')
             .doc(FirestoreService.companyId)
-            .collection('attendance_corrections')
+            .collection('attendance_issues')
             .add(data);
       }
 

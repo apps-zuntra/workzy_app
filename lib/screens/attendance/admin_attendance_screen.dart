@@ -9,6 +9,7 @@ import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:attendance_app/utils/app_session.dart';
 import 'package:attendance_app/screens/profile_screen.dart';
 import 'package:attendance_app/screens/auth_wrapper.dart';
+import 'package:attendance_app/widgets/notification_action.dart';
 import 'attendance_screen.dart';
 
 /// Admin-specific Attendance screen with My Space / Team tabs.
@@ -92,65 +93,21 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                       rawName = data['name'].toString();
                     }
                     final firstName = rawName.split(' ').first;
-                    final role = AppSession().role?.toUpperCase() ?? 'ADMIN';
-                    final greeting = _getGreeting();
-                    final dateStr = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '$greeting, $firstName',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF1F2937),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '$role · $dateStr',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF6B7280),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+                    return const Text(
+                      'Attendance Management',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1F2937),
+                      ),
                     );
                   },
                 ),
               ),
               Row(
                 children: [
-                  Stack(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                          color: Colors.white,
-                        ),
-                        child: const Icon(Icons.notifications_none_rounded, size: 20, color: Color(0xFF4B5563)),
-                      ),
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        child: Container(
-                          width: 14,
-                          height: 14,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFEF4444),
-                            shape: BoxShape.circle,
-                          ),
-                          alignment: Alignment.center,
-                          child: const Text('3', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 12),
+                  const NotificationAction(isManager: false),
+                  const SizedBox(width: 8),
                   PopupMenuButton<String>(
                     offset: const Offset(0, 40),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -226,17 +183,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          // Screen title
-          const Text(
-            'Attendance',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF1F2937),
-            ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildTabSwitcher(),
           const SizedBox(height: 4),
         ],
@@ -330,23 +277,35 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
         const Divider(height: 1, color: Color(0xFFE5E7EB)),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: FirestoreService.allAttendanceRecordsCol
-                .where('recordDate', isEqualTo: todayStr)
-                .snapshots(),
+            stream: FirestoreService.allAttendanceRecordsCol.snapshots(),
             builder: (context, attSnap) {
               return StreamBuilder<QuerySnapshot>(
                 stream: FirestoreService.employeesCol.snapshots(),
                 builder: (context, empSnap) {
-                  final attDocs = attSnap.data?.docs ?? [];
+                  final allAttDocs = attSnap.data?.docs ?? [];
                   final empDocs = empSnap.data?.docs ?? [];
+
+                  // Filter attendance docs for today
+                  final attDocs = allAttDocs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    if (doc.id == todayStr) return true;
+                    if (data['recordDate'] == todayStr) return true;
+                    if (data['date'] is Timestamp) {
+                      final d = (data['date'] as Timestamp).toDate();
+                      return DateFormat('yyyy-MM-dd').format(d) == todayStr;
+                    }
+                    if (data['checkIn'] is Timestamp) {
+                      final d = (data['checkIn'] as Timestamp).toDate();
+                      return DateFormat('yyyy-MM-dd').format(d) == todayStr;
+                    }
+                    return false;
+                  }).toList();
 
                   // Build today's attendance map: email -> data
                   final Map<String, Map<String, dynamic>> todayAtt = {};
                   for (final doc in attDocs) {
                     final data = doc.data() as Map<String, dynamic>;
-                    final email = (data['userId'] as String? ??
-                        data['email'] as String? ??
-                        '').toLowerCase();
+                    final email = (data['userEmail'] ?? data['userId'] ?? data['email'] ?? doc.reference.parent.parent?.id ?? '').toString().toLowerCase().trim();
                     if (email.isNotEmpty) {
                       todayAtt[email] = data;
                     }
@@ -444,6 +403,7 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
     final shiftStart = DateTime(today.year, today.month, today.day,
         int.parse(shiftParts[0]), int.parse(shiftParts[1]));
     final grace = AppSession().gracePeriod;
+    final lateThreshold = shiftStart.add(Duration(minutes: grace));
 
     for (final emp in employees) {
       final att = emp.attData;
@@ -451,20 +411,50 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
         absent++;
         continue;
       }
-      final checkIn = att['checkIn'] as Timestamp?;
-      final mode = att['workMode'] as String? ?? '';
 
-      if (checkIn != null) {
-        final lateThreshold =
-            shiftStart.add(Duration(minutes: grace));
-        if (checkIn.toDate().isAfter(lateThreshold)) {
+      DateTime? parseTimeToDt(dynamic val) {
+        if (val == null) return null;
+        if (val is Timestamp) return val.toDate();
+        if (val is DateTime) return val;
+        if (val is String) {
+          final iso = DateTime.tryParse(val);
+          if (iso != null) return iso;
+          final clean = val.trim();
+          final isPm = clean.toUpperCase().contains('PM');
+          final isAm = clean.toUpperCase().contains('AM');
+          final digits = clean.replaceAll(RegExp(r'[^\d:]'), '');
+          if (digits.contains(':')) {
+            final parts = digits.split(':');
+            int hour = int.tryParse(parts[0]) ?? 0;
+            final min = int.tryParse(parts[1]) ?? 0;
+            if (isPm && hour < 12) hour += 12;
+            if (isAm && hour == 12) hour = 0;
+            return DateTime(today.year, today.month, today.day, hour, min);
+          }
+        }
+        return null;
+      }
+
+      final checkInVal = parseTimeToDt(att['checkIn'] ?? att['checkInTime'] ?? att['lastCheckIn']);
+      final status = (att['status'] ?? att['attendanceStatus'] ?? '').toString().toLowerCase();
+      final mode = (att['workMode'] ?? '').toString().toLowerCase();
+
+      final isPresent = checkInVal != null ||
+          status.contains('present') ||
+          status.contains('checked') ||
+          status == 'approved' ||
+          status == 'corrected';
+
+      if (isPresent) {
+        if (mode == 'wfh' || mode == 'work_from_home') wfh++;
+        if (status.contains('late') || (checkInVal != null && checkInVal.isAfter(lateThreshold))) {
           late++;
         } else {
           present++;
         }
-        if (mode == 'wfh') wfh++;
+      } else if (status.contains('leave')) {
+        onLeave++;
       } else {
-        // Has att doc but no checkIn — treat as absent today
         absent++;
       }
     }
@@ -684,16 +674,41 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
 
   Widget _buildEmployeeAttRow(_EmpAttInfo emp, bool isLast) {
     final att = emp.attData;
-    final checkIn = att?['checkIn'] as Timestamp?;
-    final checkOut = att?['checkOut'] as Timestamp?;
-    final mode = att?['workMode'] as String? ?? '';
+    DateTime? parseTimeToDt(dynamic val) {
+      if (val == null) return null;
+      if (val is Timestamp) return val.toDate();
+      if (val is DateTime) return val;
+      if (val is String) {
+        final iso = DateTime.tryParse(val);
+        if (iso != null) return iso;
+        final clean = val.trim();
+        final isPm = clean.toUpperCase().contains('PM');
+        final isAm = clean.toUpperCase().contains('AM');
+        final digits = clean.replaceAll(RegExp(r'[^\d:]'), '');
+        if (digits.contains(':')) {
+          final parts = digits.split(':');
+          int hour = int.tryParse(parts[0]) ?? 0;
+          final min = int.tryParse(parts[1]) ?? 0;
+          if (isPm && hour < 12) hour += 12;
+          if (isAm && hour == 12) hour = 0;
+          final now = DateTime.now();
+          return DateTime(now.year, now.month, now.day, hour, min);
+        }
+      }
+      return null;
+    }
+
+    final checkInDt = parseTimeToDt(att?['checkIn'] ?? att?['checkInTime'] ?? att?['lastCheckIn']);
+    final checkOutDt = parseTimeToDt(att?['checkOut'] ?? att?['checkOutTime'] ?? att?['lastCheckout']);
+    final mode = (att?['workMode'] ?? '').toString().toLowerCase();
+    final rawStatus = (att?['status'] ?? att?['attendanceStatus'] ?? '').toString().toLowerCase();
 
     // Determine status
     String statusLabel;
     Color statusColor;
     Color statusBg;
 
-    if (att == null || checkIn == null) {
+    if (att == null || (checkInDt == null && !rawStatus.contains('present') && !rawStatus.contains('checked') && rawStatus != 'approved' && rawStatus != 'corrected')) {
       statusLabel = 'Absent';
       statusColor = const Color(0xFF6B7280);
       statusBg = const Color(0xFFF3F4F6);
@@ -705,11 +720,11 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
       final grace = AppSession().gracePeriod;
       final lateThreshold = shiftStart.add(Duration(minutes: grace));
 
-      if (mode == 'wfh') {
+      if (mode == 'wfh' || mode == 'work_from_home') {
         statusLabel = 'WFH';
         statusColor = const Color(0xFF3B82F6);
         statusBg = const Color(0xFFEFF6FF);
-      } else if (checkIn.toDate().isAfter(lateThreshold)) {
+      } else if (rawStatus.contains('late') || (checkInDt != null && checkInDt.isAfter(lateThreshold))) {
         statusLabel = 'Late';
         statusColor = const Color(0xFFF59E0B);
         statusBg = const Color(0xFFFFFBEB);
@@ -720,9 +735,9 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
       }
     }
 
-    final checkInStr = checkIn != null
-        ? 'In: ${DateFormat('hh:mm a').format(checkIn.toDate())}'
-        : '—';
+    final checkInStr = checkInDt != null
+        ? 'In: ${DateFormat('hh:mm a').format(checkInDt)}'
+        : (rawStatus.contains('present') || rawStatus.contains('checked') ? 'Present' : '—');
 
     final initials = _getInitials(emp.name);
     final colors = [
@@ -738,7 +753,7 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
         : colors[emp.name.codeUnitAt(0) % colors.length];
 
     return GestureDetector(
-      onTap: () => _showEmployeeAttDetail(emp, checkIn, checkOut, mode,
+      onTap: () => _showEmployeeAttDetail(emp, checkInDt, checkOutDt, mode,
           statusLabel, statusColor),
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -843,17 +858,18 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
 
   void _showEmployeeAttDetail(
     _EmpAttInfo emp,
-    Timestamp? checkIn,
-    Timestamp? checkOut,
+    DateTime? checkIn,
+    DateTime? checkOut,
     String mode,
     String status,
     Color statusColor,
   ) {
     final workDuration = (checkIn != null)
         ? () {
-            final end = checkOut?.toDate() ?? DateTime.now();
-            final diff = end.difference(checkIn.toDate());
-            return '${diff.inHours}h ${diff.inMinutes % 60}m';
+            final end = checkOut ?? DateTime.now();
+            final diff = end.difference(checkIn);
+            final mins = diff.inMinutes.abs();
+            return '${mins ~/ 60}h ${mins % 60}m';
           }()
         : '—';
 
@@ -946,7 +962,7 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
                   'Check In',
                   checkIn != null
                       ? DateFormat('hh:mm a')
-                          .format(checkIn.toDate())
+                          .format(checkIn)
                       : '—',
                   Icons.login_rounded,
                   const Color(0xFF10B981),
@@ -956,7 +972,7 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
                   'Check Out',
                   checkOut != null
                       ? DateFormat('hh:mm a')
-                          .format(checkOut.toDate())
+                          .format(checkOut)
                       : '—',
                   Icons.logout_rounded,
                   const Color(0xFFEF4444),
@@ -1035,13 +1051,23 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
 
     // Employees with late or absent
     final lateList = employees.where((e) {
-      final checkIn = e.attData?['checkIn'] as Timestamp?;
-      if (checkIn == null) return false;
-      return checkIn.toDate().isAfter(lateThreshold);
+      final att = e.attData;
+      if (att == null) return false;
+      final status = (att['status'] ?? att['attendanceStatus'] ?? '').toString().toLowerCase();
+      if (status.contains('late')) return true;
+      final checkIn = att['checkIn'] as Timestamp?;
+      if (checkIn != null) return checkIn.toDate().isAfter(lateThreshold);
+      return false;
     }).toList();
 
-    final absentList =
-        employees.where((e) => e.attData == null || e.attData!['checkIn'] == null).toList();
+    final absentList = employees.where((e) {
+      final att = e.attData;
+      if (att == null) return true;
+      final checkIn = att['checkIn'] ?? att['checkInTime'] ?? att['lastCheckIn'];
+      final status = (att['status'] ?? att['attendanceStatus'] ?? '').toString().toLowerCase();
+      final isPresent = checkIn != null || status.contains('present') || status.contains('checked') || status == 'approved' || status == 'corrected';
+      return !isPresent;
+    }).toList();
 
     if (lateList.isEmpty && absentList.isEmpty) {
       return Center(

@@ -9,6 +9,8 @@ import 'package:attendance_app/screens/employee/notifications_screen.dart';
 import 'package:attendance_app/screens/employee/documents_screen.dart';
 import 'package:attendance_app/screens/employee/history_screen.dart';
 import 'package:attendance_app/screens/profile/universal_profile_screen.dart';
+import 'package:attendance_app/screens/more/settings_screen.dart';
+import 'package:attendance_app/screens/more/help_support_screen.dart';
 
 class UniversalMoreTab extends StatefulWidget {
   const UniversalMoreTab({super.key});
@@ -121,23 +123,23 @@ class _UniversalMoreTabState extends State<UniversalMoreTab> {
                     const SizedBox(height: 12),
                     if (AppSession().hasPermission('settings')) ...[
                       _buildMenuItem(
-                        icon: Icons.adjust,
+                        icon: Icons.settings_outlined,
                         title: 'Settings',
                         subtitle: 'Appearance, privacy & security',
                         iconColor: const Color(0xFF7C3AED),
                         iconBgColor: const Color(0xFFF5F3FF),
-                        onTap: () => _showComingSoon('Settings'),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
                       ),
                       const SizedBox(height: 12),
                     ],
                     if (AppSession().hasPermission('support')) ...[
                       _buildMenuItem(
-                        icon: Icons.info_outline,
+                        icon: Icons.help_outline_rounded,
                         title: 'Help & Support',
                         subtitle: 'FAQs, contact HR & tickets',
                         iconColor: const Color(0xFFDC2626),
                         iconBgColor: const Color(0xFFFEF2F2),
-                        onTap: () => _showComingSoon('Help & Support'),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpSupportScreen())),
                       ),
                       const SizedBox(height: 24),
                     ] else

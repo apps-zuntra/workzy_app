@@ -98,7 +98,7 @@ class _EmployeeHomeTabState extends State<EmployeeHomeTab> {
     _pendingCorrectionsStream = FirebaseFirestore.instance
         .collection('organizations')
         .doc(FirestoreService.companyId)
-        .collection('attendance_corrections')
+        .collection('attendance_issues')
         .where('userId', isEqualTo: AppSession().uid)
         .where('status', isEqualTo: 'pending')
         .limit(3)
@@ -1641,7 +1641,13 @@ class _EmployeeHomeTabState extends State<EmployeeHomeTab> {
               ]
             : tasks.map((doc) {
                 final data = doc.data() as Map<String, dynamic>;
-                final dueDate = (data['dueDate'] as Timestamp?)?.toDate();
+                DateTime? dueDate;
+                final rawDue = data['dueDate'] ?? data['due'];
+                if (rawDue is Timestamp) {
+                  dueDate = rawDue.toDate();
+                } else if (rawDue is String) {
+                  dueDate = DateTime.tryParse(rawDue);
+                }
                 final isOverdue =
                     dueDate != null && dueDate.isBefore(DateTime.now());
                 final isDueToday = dueDate != null &&
@@ -1981,22 +1987,29 @@ class _EmployeeHomeTabState extends State<EmployeeHomeTab> {
       builder: (context, snap) {
         final now = DateTime.now();
         List<Map<String, dynamic>> holidays = [];
+        DateTime? pDate(dynamic v) {
+          if (v is Timestamp) return v.toDate();
+          if (v is String) return DateTime.tryParse(v);
+          return null;
+        }
         if (snap.hasData) {
           final sorted = snap.data!.docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            if (data['date'] == null) return false;
-            final date = (data['date'] as Timestamp).toDate();
+            final date = pDate(data['date']);
+            if (date == null) return false;
             return date.isAfter(now) ||
                 (date.year == now.year &&
                     date.month == now.month &&
                     date.day == now.day);
           }).toList()
-            ..sort((a, b) => ((a.data() as Map)['date'] as Timestamp)
-                .toDate()
-                .compareTo(((b.data() as Map)['date'] as Timestamp).toDate()));
+            ..sort((a, b) {
+              final dA = pDate((a.data() as Map)['date']) ?? now;
+              final dB = pDate((b.data() as Map)['date']) ?? now;
+              return dA.compareTo(dB);
+            });
           holidays = sorted.take(3).map((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            final date = (data['date'] as Timestamp).toDate();
+            final date = pDate(data['date']) ?? now;
             final diff =
                 date.difference(DateTime(now.year, now.month, now.day)).inDays;
             return {

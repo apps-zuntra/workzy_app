@@ -24,36 +24,28 @@ class _AttendanceRequestsTabState extends State<AttendanceRequestsTab> {
   final _user = FirebaseAuth.instance.currentUser;
   String get _role => AppSession().role?.toLowerCase() ?? 'employee';
 
+  Timestamp? _parseTs(dynamic val) {
+    if (val == null) return null;
+    if (val is Timestamp) return val;
+    if (val is String) {
+      final parsed = DateTime.tryParse(val);
+      if (parsed != null) return Timestamp.fromDate(parsed);
+    }
+    if (val is DateTime) return Timestamp.fromDate(val);
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        _buildRequestsList(),
-        // FAB
-        Positioned(
-          bottom: 20,
-          right: 20,
-          child: FloatingActionButton(
-            onPressed: _showNewRequestSheet,
-            backgroundColor: AppTheme.primary,
-            elevation: 4,
-            child: const Icon(Icons.add, color: Colors.white, size: 28),
-          ),
-        ),
-      ],
-    );
+    return _buildRequestsList();
   }
 
   Widget _buildRequestsList() {
-    // For employee: query their own leave_requests sub-collection
-    // For manager/admin: query all leave_requests via collection group
-    final Stream<QuerySnapshot> stream = FirestoreService.leaveRequestsCol.snapshots();
-
     return StreamBuilder<QuerySnapshot>(
-      stream: stream,
+      stream: _getAttendanceIssuesStream(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          debugPrint('Leave Requests Stream Error: ${snapshot.error}');
+          debugPrint('Attendance Issues Stream Error: ${snapshot.error}');
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -69,80 +61,61 @@ class _AttendanceRequestsTabState extends State<AttendanceRequestsTab> {
               child: CircularProgressIndicator(color: AppTheme.primary));
         }
 
-        // Also check for attendance correction requests
-        return StreamBuilder<QuerySnapshot>(
-          stream: _getAttendanceCorrectionStream(),
-          builder: (context, correctionSnap) {
-            final leaveReqs = snapshot.data!.docs;
-            final correctionReqs = correctionSnap.data?.docs ?? [];
+        final correctionReqs = snapshot.data?.docs ?? [];
+        final allRequests = <_RequestItem>[];
 
-            // Merge and sort by date
-            final allRequests = <_RequestItem>[];
+        for (final doc in correctionReqs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final senderRole = (data['senderRole'] ?? 'employee').toString().toLowerCase();
+          final isOwn = data['userId'] == _user?.uid || data['userEmail'] == _user?.email;
+          
+          if (_role == 'manager' && senderRole != 'employee' && !isOwn) {
+            continue;
+          }
 
-            for (final doc in leaveReqs) {
-              final data = doc.data() as Map<String, dynamic>;
-              final senderRole = (data['senderRole'] ?? 'employee').toString().toLowerCase();
-              final isOwn = data['userId'] == _user?.uid || data['userEmail'] == _user?.email;
-              
-              if (_role == 'manager' && senderRole != 'employee' && !isOwn) {
-                continue;
-              }
+          allRequests.add(_RequestItem(
+            id: doc.id,
+            reference: doc.reference,
+            type: 'Attendance Correction',
+            status: (data['status'] ?? 'pending').toString().toLowerCase(),
+            submittedAt: _parseTs(data['submittedAt']) ??
+                _parseTs(data['createdAt']) ?? _parseTs(data['requestDate']),
+            requestedDate: _parseTs(data['date']) ??
+                _parseTs(data['attendanceDate']) ?? _parseTs(data['checkInTime']),
+            managerName: data['managerName'] as String?,
+            data: data,
+          ));
+        }
 
-              final reqType = _getRequestType(data);
+        // Sort by submitted date descending
+        allRequests.sort((a, b) {
+          final aTime = a.submittedAt?.toDate() ?? DateTime(2000);
+          final bTime = b.submittedAt?.toDate() ?? DateTime(2000);
+          return bTime.compareTo(aTime);
+        });
 
-              allRequests.add(_RequestItem(
-                id: doc.id,
-                reference: doc.reference,
-                type: reqType,
-                status: (data['status'] ?? 'pending').toString().toLowerCase(),
-                submittedAt: data['submittedAt'] as Timestamp? ?? data['requestDate'] as Timestamp?,
-                requestedDate: data['requestedDate'] as Timestamp? ??
-                    data['startDate'] as Timestamp? ?? data['fromDate'] as Timestamp?,
-                managerName: data['managerName'] as String? ?? data['approvedBy'] as String?,
-                data: data,
-              ));
-            }
+        if (allRequests.isEmpty) {
+          return _buildEmptyState();
+        }
 
-            for (final doc in correctionReqs) {
-              final data = doc.data() as Map<String, dynamic>;
-              final senderRole = (data['senderRole'] ?? 'employee').toString().toLowerCase();
-              final isOwn = data['userId'] == _user?.uid || data['userEmail'] == _user?.email;
-              
-              if (_role == 'manager' && senderRole != 'employee' && !isOwn) {
-                continue;
-              }
-
-              allRequests.add(_RequestItem(
-                id: doc.id,
-                reference: doc.reference,
-                type: 'Attendance Correction',
-                status: (data['status'] ?? 'pending').toString().toLowerCase(),
-                submittedAt: data['submittedAt'] as Timestamp? ??
-                    data['createdAt'] as Timestamp? ?? data['requestDate'] as Timestamp?,
-                requestedDate: data['date'] as Timestamp? ?? data['checkInTime'] as Timestamp?,
-                managerName: data['managerName'] as String?,
-                data: data,
-              ));
-            }
-
-            // Sort by submitted date descending
-            allRequests.sort((a, b) {
-              final aTime = a.submittedAt?.toDate() ?? DateTime(2000);
-              final bTime = b.submittedAt?.toDate() ?? DateTime(2000);
-              return bTime.compareTo(aTime);
-            });
-
-            if (allRequests.isEmpty) {
-              return _buildEmptyState();
-            }
-
-            return ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-              physics: const BouncingScrollPhysics(),
-              itemCount: allRequests.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, index) =>
-                  _requestCard(allRequests[index]),
+        return ListView.separated(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          itemCount: allRequests.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            final req = allRequests[index];
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => AttendanceRequestDetailScreen(
+                            reference: req.reference,
+                            title: req.type,
+                          )),
+                );
+              },
+              child: _requestCard(req),
             );
           },
         );
@@ -150,14 +123,17 @@ class _AttendanceRequestsTabState extends State<AttendanceRequestsTab> {
     );
   }
 
-  Stream<QuerySnapshot> _getAttendanceCorrectionStream() {
-    // Try to get overtime requests which may contain correction requests
+  Stream<QuerySnapshot> _getAttendanceIssuesStream() {
     try {
       if (_role == 'employee') {
-        return FirestoreService.userOvertimeRequestsCol(_user?.email ?? '')
+        return FirebaseFirestore.instance
+            .collection('organizations')
+            .doc(FirestoreService.companyId)
+            .collection('attendance_issues')
+            .where('userId', isEqualTo: _user?.email ?? '')
             .snapshots();
       } else {
-        return FirestoreService.allOvertimeRequestsQuery.snapshots();
+        return FirestoreService.allAttendanceIssuesQuery.snapshots();
       }
     } catch (_) {
       return const Stream.empty();

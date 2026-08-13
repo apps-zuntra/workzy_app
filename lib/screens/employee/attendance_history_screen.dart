@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -21,6 +21,25 @@ class AttendanceHistoryScreen extends StatefulWidget {
 class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
   String selectedMonth = DateFormat('MMMM yyyy').format(DateTime.now());
 
+  DateTime? _parseTs(dynamic val) {
+    if (val == null) return null;
+    if (val is Timestamp) return val.toDate();
+    if (val is DateTime) return val;
+    if (val is String) {
+      final s = val.trim();
+      if (s.isEmpty) return null;
+      final dt = DateTime.tryParse(s);
+      if (dt != null) return dt;
+      try {
+        return DateFormat('MMM d, yyyy').parse(s);
+      } catch (_) {}
+      try {
+        return DateFormat('yyyy-MM-dd').parse(s);
+      } catch (_) {}
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final userEmail = FirebaseAuth.instance.currentUser?.email ?? '';
@@ -31,7 +50,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
         final userData = userSnap.data?.data() as Map<String, dynamic>?;
         final currentEmail = userData?['email'] as String? ?? userEmail;
         final targetEmail = widget.userId?.contains('@') == true ? widget.userId : currentEmail;
-        final DateTime? createdAt = (userData?['createdAt'] as Timestamp?)?.toDate();
+        final DateTime? createdAt = _parseTs(userData?['createdAt']);
 
         return Scaffold(
           backgroundColor: AppTheme.surface,
@@ -121,9 +140,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
     DateTime? firstCheckIn;
     for (var doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
-      final dateTs = data['date'] as Timestamp? ?? data['checkIn'] as Timestamp?;
-      if (dateTs != null) {
-        final d = dateTs.toDate();
+      final d = _parseTs(data['date'] ?? data['checkIn']);
+      if (d != null) {
         if (firstCheckIn == null || d.isBefore(firstCheckIn)) {
           firstCheckIn = d;
         }
@@ -134,18 +152,15 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
 
     for (var doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
-      final dateTs = data['date'] as Timestamp? ?? data['checkIn'] as Timestamp?;
-      if (dateTs == null) continue;
-      
-      final date = dateTs.toDate();
+      final date = _parseTs(data['date'] ?? data['checkIn']);
+      if (date == null) continue;
       
       if (date.month == month && date.year == year) {
         presentDays++;
         
-        final checkIn = data['checkIn'] as Timestamp?;
+        final time = _parseTs(data['checkIn']);
         final remarkStatus = data['remarkStatus'] as String?;
-        if (checkIn != null && remarkStatus != 'approved') {
-          final time = checkIn.toDate();
+        if (time != null && remarkStatus != 'approved') {
           final parts = AppSession().shiftStartTime.split(':');
           final threshold = DateTime(time.year, time.month, time.day, 
               int.parse(parts[0]), int.parse(parts[1]))
@@ -156,9 +171,9 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
           }
         }
 
-        final checkOut = data['checkOut'] as Timestamp?;
-        if (checkIn != null && checkOut != null) {
-          final diff = checkOut.toDate().difference(checkIn.toDate());
+        final checkOut = _parseTs(data['checkOut']);
+        if (time != null && checkOut != null) {
+          final diff = checkOut.difference(time);
           totalHours += diff.inMinutes / 60;
         }
       }
@@ -360,17 +375,17 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
         Column(
           children: filteredDocs.map((doc) {
             final data = doc.data() as Map<String, dynamic>;
-            final checkIn = data['checkIn'] as Timestamp?;
-            final checkOut = data['checkOut'] as Timestamp?;
+            final checkIn = _parseTs(data['checkIn']);
+            final checkOut = _parseTs(data['checkOut']);
             
             // Re-calculate duration string
             String total = '--:--';
             if (checkIn != null && checkOut != null) {
-              final diff = checkOut.toDate().difference(checkIn.toDate());
+              final diff = checkOut.difference(checkIn);
               total = '${diff.inHours}h ${diff.inMinutes % 60}m';
             }
 
-            final date = DateTime.parse(doc.id);
+            final date = DateTime.tryParse(doc.id) ?? _parseTs(data['date']) ?? DateTime.now();
             final status = data['status'] == 'checked_out' ? 'PRESENT' : 'ON DUTY';
             final workMode = data['workMode'] == 'wfh' ? 'WFH' : 'OFFICE';
             final displayStatus = '$status ($workMode)';
@@ -379,8 +394,8 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
             return _logCard(
               DateFormat('MMM dd').format(date).toUpperCase(),
               DateFormat('EEEE').format(date),
-              checkIn != null ? DateFormat('hh:mm a').format(checkIn.toDate()) : '--:--',
-              checkOut != null ? DateFormat('hh:mm a').format(checkOut.toDate()) : '--:--',
+              checkIn != null ? DateFormat('hh:mm a').format(checkIn) : '--:--',
+              checkOut != null ? DateFormat('hh:mm a').format(checkOut) : '--:--',
               total,
               displayStatus,
               color,

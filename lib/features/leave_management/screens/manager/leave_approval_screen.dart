@@ -156,8 +156,6 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen> {
                   if (bDate == null) return -1;
                   return bDate.compareTo(aDate);
                 });
-                    return bDate.compareTo(aDate); // Sort descending
-                  });
 
                 return ListView.builder(
                   padding: const EdgeInsets.all(20),
@@ -174,6 +172,8 @@ class _LeaveApprovalScreenState extends State<LeaveApprovalScreen> {
         ],
       ),
     );
+  }
+
   Widget _leaveCard(
       BuildContext context, DocumentReference docRef, Map<String, dynamic> data) {
     final name = (data['applicantName'] ??

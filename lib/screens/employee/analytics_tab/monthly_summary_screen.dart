@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:attendance_app/theme/app_theme.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
+import 'package:attendance_app/utils/app_session.dart';
 
 /// Screen 2 â€” Monthly Summary (matches center panel in mockup)
 class MonthlySummaryScreen extends StatefulWidget {
@@ -19,7 +20,13 @@ class MonthlySummaryScreen extends StatefulWidget {
 }
 
 class _MonthlySummaryScreenState extends State<MonthlySummaryScreen> {
-  final _user = FirebaseAuth.instance.currentUser;
+  String get _userEmail {
+    final authEmail = FirebaseAuth.instance.currentUser?.email ?? '';
+    if (authEmail.isNotEmpty && authEmail.contains('@')) return authEmail;
+    final sessionEmail = AppSession().email ?? '';
+    if (sessionEmail.isNotEmpty && sessionEmail.contains('@')) return sessionEmail;
+    return authEmail.isNotEmpty ? authEmail : sessionEmail;
+  }
   DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
 
   void _prevMonth() => setState(
@@ -53,17 +60,23 @@ class _MonthlySummaryScreenState extends State<MonthlySummaryScreen> {
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirestoreService.userAttendanceCol(_user?.email ?? '').snapshots(),
+        stream: FirestoreService.userAttendanceCol(_userEmail).snapshots(),
         builder: (context, attSnap) {
           return StreamBuilder<QuerySnapshot>(
-            stream: FirestoreService.userLeaveRequestsCol(_user?.email ?? '').snapshots(),
+            stream: FirestoreService.userLeaveRequestsCol(_userEmail).snapshots(),
             builder: (context, leaveSnap) {
               final attendanceDocs = attSnap.data?.docs ?? [];
               final leaveDocs = leaveSnap.data?.docs ?? [];
 
               // Filter to focused month
               final monthDocs = attendanceDocs.where((d) {
-                final date = DateTime.tryParse(d.id);
+                final data = d.data() as Map<String, dynamic>?;
+                DateTime? date = DateTime.tryParse(d.id);
+                if (date == null && data != null) {
+                  if (data['recordDate'] is String) date = DateTime.tryParse(data['recordDate']);
+                  if (date == null && data['date'] is Timestamp) date = (data['date'] as Timestamp).toDate();
+                  if (date == null && data['checkIn'] is Timestamp) date = (data['checkIn'] as Timestamp).toDate();
+                }
                 return date != null &&
                     date.year == _focusedMonth.year &&
                     date.month == _focusedMonth.month;
@@ -292,11 +305,9 @@ class _MonthlySummaryScreenState extends State<MonthlySummaryScreen> {
 
     Color bgColor = Colors.transparent;
     Color textColor = AppTheme.textPrimary;
+    BoxBorder? border;
 
-    if (isToday) {
-      bgColor = AppTheme.primary;
-      textColor = Colors.white;
-    } else if (!isFuture && status != null) {
+    if (status != null) {
       switch (status) {
         case 'present':
           bgColor = const Color(0xFF22C55E);
@@ -315,16 +326,30 @@ class _MonthlySummaryScreenState extends State<MonthlySummaryScreen> {
           textColor = Colors.white;
           break;
         case 'absent':
-          bgColor = const Color(0xFFEF4444);
-          textColor = Colors.white;
+          if (!isFuture) {
+            bgColor = const Color(0xFFEF4444);
+            textColor = Colors.white;
+          }
           break;
       }
-    } else if (isFuture) {
+    }
+
+    if (isToday) {
+      if (status == null) {
+        border = Border.all(color: AppTheme.primary, width: 2);
+      } else {
+        border = Border.all(color: const Color(0xFF1E1B4B), width: 2.5);
+      }
+    } else if (isFuture && status == null) {
       textColor = AppTheme.textHint;
     }
 
     return Container(
-      decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+      decoration: BoxDecoration(
+        color: bgColor,
+        shape: BoxShape.circle,
+        border: border,
+      ),
       child: Center(
         child: Text('$day',
             style: TextStyle(
@@ -477,12 +502,23 @@ class _MonthlySummaryScreenState extends State<MonthlySummaryScreen> {
     final daysInMonth = DateTimeUtils.daysInMonth(_focusedMonth);
     final workingDays = _countWorkingDaysInMonth(_focusedMonth);
 
+    Timestamp? parseTs(dynamic val) {
+      if (val == null) return null;
+      if (val is Timestamp) return val;
+      if (val is String) {
+        final parsed = DateTime.tryParse(val);
+        if (parsed != null) return Timestamp.fromDate(parsed);
+      }
+      if (val is DateTime) return Timestamp.fromDate(val);
+      return null;
+    }
+
     for (final doc in monthDocs) {
       final data = doc.data() as Map<String, dynamic>;
-      final status = data['status'] as String? ?? '';
-      final checkIn = data['checkIn'] as Timestamp?;
-      final checkOut = data['checkOut'] as Timestamp?;
-      final workMode = data['workMode'] as String? ?? 'office';
+      final status = (data['status'] ?? data['attendanceStatus'] ?? '').toString().toLowerCase();
+      final checkIn = parseTs(data['checkIn'] ?? data['checkInTime'] ?? data['lastCheckIn']);
+      final checkOut = parseTs(data['checkOut'] ?? data['checkOutTime'] ?? data['lastCheckout']);
+      final workMode = (data['workMode'] ?? 'office').toString().toLowerCase();
 
       if (status == 'holiday') {
         holiday++;
@@ -493,12 +529,19 @@ class _MonthlySummaryScreenState extends State<MonthlySummaryScreen> {
         continue;
       }
 
-      if (checkIn != null) {
+      final isPresent = checkIn != null ||
+          data['lastCheckIn'] != null ||
+          status.contains('present') ||
+          status.contains('checked') ||
+          status == 'approved' ||
+          status == 'corrected';
+
+      if (isPresent) {
         if (workMode == 'wfh' || workMode == 'remote') wfh++;
-        if (status == 'late') late++;
+        if (status.contains('late')) late++;
         present++;
 
-        if (checkOut != null) {
+        if (checkIn != null && checkOut != null) {
           final diff = checkOut.toDate().difference(checkIn.toDate());
           if (diff.inMinutes > 480) overtimeMinutes += diff.inMinutes - 480;
         }
@@ -539,20 +582,37 @@ class _MonthlySummaryScreenState extends State<MonthlySummaryScreen> {
 
   Map<int, String> _buildStatusMap(List<QueryDocumentSnapshot> monthDocs) {
     final map = <int, String>{};
+    Timestamp? parseTs(dynamic val) {
+      if (val == null) return null;
+      if (val is Timestamp) return val;
+      if (val is String) {
+        final parsed = DateTime.tryParse(val);
+        if (parsed != null) return Timestamp.fromDate(parsed);
+      }
+      if (val is DateTime) return Timestamp.fromDate(val);
+      return null;
+    }
+
     for (final doc in monthDocs) {
-      final date = DateTime.tryParse(doc.id);
-      if (date == null) continue;
       final data = doc.data() as Map<String, dynamic>;
-      final status = data['status'] as String? ?? '';
-      final checkIn = data['checkIn'] as Timestamp?;
+      DateTime? date = DateTime.tryParse(doc.id);
+      if (date == null) {
+        if (data['recordDate'] is String) date = DateTime.tryParse(data['recordDate']);
+        if (date == null && data['date'] is Timestamp) date = (data['date'] as Timestamp).toDate();
+        if (date == null && data['checkIn'] is Timestamp) date = (data['checkIn'] as Timestamp).toDate();
+      }
+      if (date == null) continue;
+
+      final status = (data['status'] ?? data['attendanceStatus'] ?? '').toString().toLowerCase();
+      final checkIn = parseTs(data['checkIn'] ?? data['checkInTime'] ?? data['lastCheckIn']);
 
       String s;
       if (status == 'holiday') {
         s = 'holiday';
       } else if (status == 'leave') {
         s = 'leave';
-      } else if (checkIn != null) {
-        s = status == 'late' ? 'late' : 'present';
+      } else if (checkIn != null || data['lastCheckIn'] != null || status.contains('present') || status.contains('checked') || status == 'approved' || status == 'corrected') {
+        s = status.contains('late') ? 'late' : 'present';
       } else {
         s = 'absent';
       }
@@ -573,7 +633,7 @@ class _MonthlySummaryScreenState extends State<MonthlySummaryScreen> {
 
   Future<void> _downloadReport() async {
     try {
-      final snap = await FirestoreService.userAttendanceCol(_user?.email ?? '').get();
+      final snap = await FirestoreService.userAttendanceCol(_userEmail).get();
       final monthDocs = snap.docs.where((d) {
         final date = DateTime.tryParse(d.id);
         return date != null &&

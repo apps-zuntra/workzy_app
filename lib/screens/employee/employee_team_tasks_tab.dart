@@ -213,400 +213,410 @@ class _EmployeeTeamTasksTabState extends State<EmployeeTeamTasksTab> {
   }
 
   Widget _buildTodoCard(Map<String, dynamic> data) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  data['title'],
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Text(
-                    data['priority'],
-                    style: TextStyle(
-                      fontSize: 11,
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TaskDetailScreen(
+              taskId: data['id'],
+              initialTaskData: data,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    data['title'],
+                    style: const TextStyle(
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: data['priorityColor'],
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right_rounded,
-                      size: 16, color: Color(0xFF9CA3AF)),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.person_outline,
-                  size: 14, color: Color(0xFF9CA3AF)),
-              const SizedBox(width: 4),
-              Text(
-                data['assignee'],
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Icon(Icons.access_time, size: 14, color: Color(0xFF9CA3AF)),
-              const SizedBox(width: 4),
-              Text(
-                data['due'],
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 36,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'Accept',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF4B5563),
+                      color: Color(0xFF111827),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
-                  height: 36,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF5C5CFF),
-                    borderRadius: BorderRadius.circular(8),
+                Row(
+                  children: [
+                    Text(
+                      data['priority'],
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: data['priorityColor'],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right_rounded,
+                        size: 16, color: Color(0xFF9CA3AF)),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.person_outline,
+                    size: 14, color: Color(0xFF9CA3AF)),
+                const SizedBox(width: 4),
+                Text(
+                  data['assignee'],
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w500,
                   ),
-                  child: const Text(
-                    'Start',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                ),
+                const SizedBox(width: 12),
+                const Icon(Icons.access_time, size: 14, color: Color(0xFF9CA3AF)),
+                const SizedBox(width: 4),
+                Text(
+                  data['due'],
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Accept',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF4B5563),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () async {
+                      if (data['id'] != null) {
+                        await FirestoreService.tasksCol.doc(data['id']).update({
+                          'status': 'in_progress',
+                          'timerStart': FieldValue.serverTimestamp(),
+                          'isPaused': false,
+                        });
+                      }
+                    },
+                    child: Container(
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF5C5CFF),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Start',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildInProgressCard(Map<String, dynamic> data) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  data['title'],
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Text(
-                    data['priority'],
-                    style: TextStyle(
-                      fontSize: 11,
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TaskDetailScreen(
+              taskId: data['id'],
+              initialTaskData: data,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    data['title'],
+                    style: const TextStyle(
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: data['priorityColor'],
+                      color: Color(0xFF111827),
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right_rounded,
-                      size: 16, color: Color(0xFF9CA3AF)),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.person_outline,
-                  size: 14, color: Color(0xFF9CA3AF)),
-              const SizedBox(width: 4),
-              Text(
-                data['assignee'],
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w500,
                 ),
-              ),
-              const SizedBox(width: 12),
-              const Icon(Icons.access_time, size: 14, color: Color(0xFF9CA3AF)),
-              const SizedBox(width: 4),
-              Text(
-                data['due'],
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w500,
+                Row(
+                  children: [
+                    Text(
+                      data['priority'],
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: data['priorityColor'],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right_rounded,
+                        size: 16, color: Color(0xFF9CA3AF)),
+                  ],
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE5E7EB),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: data['progress'],
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF5C5CFF),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 100 - (data['progress'] as int),
-                        child: const SizedBox(),
-                      ),
-                    ],
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.person_outline,
+                    size: 14, color: Color(0xFF9CA3AF)),
+                const SizedBox(width: 4),
+                Text(
+                  data['assignee'],
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                '${data['progress']}%',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF5C5CFF),
+                const SizedBox(width: 12),
+                const Icon(Icons.access_time, size: 14, color: Color(0xFF9CA3AF)),
+                const SizedBox(width: 4),
+                Text(
+                  data['due'],
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _showUpdateProgressSheet(
-                      context, data['progress'] as int),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
                   child: Container(
-                    height: 36,
-                    alignment: Alignment.center,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      border: Border.all(color: const Color(0xFF5C5CFF)),
-                      borderRadius: BorderRadius.circular(8),
+                      color: const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(2),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(Icons.show_chart_rounded,
-                            size: 16, color: Color(0xFF5C5CFF)),
-                        SizedBox(width: 8),
-                        Text(
-                          'Update Progress',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF5C5CFF),
+                      children: [
+                        Expanded(
+                          flex: (data['progress'] as num?)?.toInt() ?? 50,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF5C5CFF),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
                           ),
+                        ),
+                        Expanded(
+                          flex: 100 - ((data['progress'] as num?)?.toInt() ?? 50),
+                          child: const SizedBox(),
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(8),
+                const SizedBox(width: 12),
+                Text(
+                  '${data['progress']}%',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF5C5CFF),
+                  ),
                 ),
-                child: const Icon(Icons.chat_bubble_outline_rounded,
-                    size: 16, color: Color(0xFF6B7280)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 12,
-                backgroundColor: Color(0xFF5C5CFF),
-                child: Text('AH',
-                    style: TextStyle(
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _showUpdateProgressSheet(
+                        context, (data['progress'] as num?)?.toInt() ?? 50),
+                    child: Container(
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
                         color: Colors.white,
-                        fontSize: 8,
-                        fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
+                        border: Border.all(color: const Color(0xFF5C5CFF)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.show_chart_rounded,
+                              size: 16, color: Color(0xFF5C5CFF)),
+                          SizedBox(width: 8),
+                          Text(
+                            'Update Progress',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF5C5CFF),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  width: 36,
                   height: 36,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Row(
-                    children: const [
-                      Expanded(
-                        child: Text(
-                          'Add a comment...',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF9CA3AF),
-                          ),
-                        ),
-                      ),
-                      Icon(Icons.send_rounded,
-                          size: 14, color: Color(0xFF9CA3AF)),
-                    ],
-                  ),
+                  child: const Icon(Icons.chat_bubble_outline_rounded,
+                      size: 16, color: Color(0xFF6B7280)),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildCompletedCard(Map<String, dynamic> data) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  data['title'],
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TaskDetailScreen(
+              taskId: data['id'],
+              initialTaskData: data,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    data['title'],
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                    ),
                   ),
                 ),
-              ),
-              const Icon(Icons.check_circle_outline,
-                  color: Color(0xFF10B981), size: 18),
-              const Icon(Icons.chevron_right_rounded,
-                  size: 16, color: Color(0xFF9CA3AF)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.person_outline,
-                  size: 14, color: Color(0xFF9CA3AF)),
-              const SizedBox(width: 4),
-              Text(
-                data['assignee'],
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w500,
+                const Icon(Icons.check_circle_outline,
+                    color: Color(0xFF10B981), size: 18),
+                const Icon(Icons.chevron_right_rounded,
+                    size: 16, color: Color(0xFF9CA3AF)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.person_outline,
+                    size: 14, color: Color(0xFF9CA3AF)),
+                const SizedBox(width: 4),
+                Text(
+                  data['assignee'],
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              const Icon(Icons.check_circle_outline,
-                  size: 14, color: Color(0xFF9CA3AF)),
-              const SizedBox(width: 4),
-              Text(
-                data['completedDate'],
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w500,
+                const SizedBox(width: 12),
+                const Icon(Icons.check_circle_outline,
+                    size: 14, color: Color(0xFF9CA3AF)),
+                const SizedBox(width: 4),
+                Text(
+                  data['completedDate'],
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Text(
-                'Manager Review: ',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w500,
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Text(
+                  'Manager Review: ',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-              Text(
-                data['status'],
-                style: TextStyle(
-                  fontSize: 12,
-                  color: data['statusColor'],
-                  fontWeight: FontWeight.w700,
+                Text(
+                  data['status'],
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: data['statusColor'],
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

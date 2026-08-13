@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import 'app_session.dart';
 
 /// FirestoreService â€” Single source of truth for all Firestore collection
@@ -166,8 +167,8 @@ class FirestoreService {
   }
 
   /// All attendance corrections for the current company via collection group query (if sub-collections) or flat
-  static Query<Map<String, dynamic>> get allAttendanceCorrectionsQuery {
-    return companyDoc().collection('attendance_corrections');
+  static Query<Map<String, dynamic>> get allAttendanceIssuesQuery {
+    return companyDoc().collection('attendance_issues');
   }
 
   /// All shift requests for the current company
@@ -216,6 +217,10 @@ class FirestoreService {
   /// `/organizations/{companyId}/company_calendar`
   static CollectionReference<Map<String, dynamic>> get companyCalendarCol =>
       companyDoc().collection('company_calendar');
+
+  /// `/organizations/{companyId}/policies`
+  static CollectionReference<Map<String, dynamic>> get policiesCol =>
+      companyDoc().collection('policies');
 
   /// `/organizations/{companyId}/tasks`
   static CollectionReference<Map<String, dynamic>> get tasksCol =>
@@ -271,6 +276,8 @@ class FirestoreService {
 
   /// Find a company where the given email is the manager.
   /// This is used for login fallback when the manager isn't in 'approved_users'.
+  /// Find a company where the given email is the manager.
+  /// This is used for login fallback when the manager isn't in 'approved_users'.
   static Future<QuerySnapshot<Map<String, dynamic>>> findCompanyByManagerEmail(
           String email) =>
       _db
@@ -278,4 +285,61 @@ class FirestoreService {
           .where('managerEmail', isEqualTo: email.toLowerCase())
           .limit(1)
           .get();
+
+  /// When an attendance correction request is approved, update the employee's attendance record for that day.
+  static Future<void> applyAttendanceCorrectionApproval({
+    required Map<String, dynamic> requestData,
+  }) async {
+    try {
+      final email = (requestData['userId'] ?? requestData['userEmail'] ?? requestData['email'] ?? '').toString();
+      if (email.isEmpty) return;
+
+      final attDateVal = requestData['attendanceDate'] ?? requestData['date'] ?? requestData['requestedDate'];
+      DateTime? baseDate;
+      if (attDateVal is Timestamp) baseDate = attDateVal.toDate();
+      if (attDateVal is String) baseDate = DateTime.tryParse(attDateVal);
+
+      if (baseDate == null) return;
+
+      final docId = DateFormat('yyyy-MM-dd').format(baseDate);
+
+      Timestamp? parseTime(dynamic rawTime, DateTime date) {
+        if (rawTime is Timestamp) return rawTime;
+        if (rawTime is String && rawTime.isNotEmpty) {
+          if (rawTime.contains(':')) {
+            final parts = rawTime.split(':');
+            final h = int.tryParse(parts[0].trim()) ?? 0;
+            final m = int.tryParse(parts[1].trim()) ?? 0;
+            return Timestamp.fromDate(DateTime(date.year, date.month, date.day, h, m));
+          }
+          final parsed = DateTime.tryParse(rawTime);
+          if (parsed != null) return Timestamp.fromDate(parsed);
+        }
+        return null;
+      }
+
+      final checkInTs = parseTime(requestData['correctedCheckIn'] ?? requestData['checkInTime'] ?? requestData['checkIn'], baseDate);
+      final checkOutTs = parseTime(requestData['correctedCheckOut'] ?? requestData['checkOutTime'] ?? requestData['checkOut'], baseDate);
+
+      final Map<String, dynamic> updatePayload = {
+        'status': 'present',
+        'date': Timestamp.fromDate(DateTime(baseDate.year, baseDate.month, baseDate.day)),
+        'recordDate': docId,
+        'isCorrection': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      if (checkInTs != null) {
+        updatePayload['checkIn'] = checkInTs;
+        updatePayload['checkInTime'] = checkInTs;
+      }
+      if (checkOutTs != null) {
+        updatePayload['checkOut'] = checkOutTs;
+        updatePayload['checkOutTime'] = checkOutTs;
+      }
+
+      await userAttendanceCol(email).doc(docId).set(updatePayload, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Error applying attendance correction timing: $e');
+    }
+  }
 }

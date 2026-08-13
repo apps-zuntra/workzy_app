@@ -6,6 +6,14 @@ class EmployeeCalendarTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const CalendarTabView();
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Attendance Calendar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0.5,
+      ),
+      body: const CalendarTabView(),
+    );
   }
 }

@@ -12,6 +12,8 @@ import 'package:attendance_app/utils/notification_helper.dart';
 import 'package:attendance_app/utils/notification_service.dart';
 import 'package:attendance_app/screens/employee/employee_attendance_detail_screen.dart';
 import 'package:attendance_app/screens/employee/attendance_history_screen.dart';
+import 'package:attendance_app/screens/employee/employee_attendance_correction_screen.dart';
+import 'package:attendance_app/screens/employee/employee_calendar_tab.dart';
 
 /// Overview tab â€” shows today's attendance card, this week progress,
 /// monthly summary, today's shift, and quick actions.
@@ -24,8 +26,13 @@ class AttendanceOverviewTab extends StatefulWidget {
 }
 
 class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
-  final _user = FirebaseAuth.instance.currentUser;
-  late Stream<QuerySnapshot> _attendanceStream;
+  String get _userEmail {
+    final authEmail = FirebaseAuth.instance.currentUser?.email ?? '';
+    if (authEmail.isNotEmpty && authEmail.contains('@')) return authEmail;
+    final sessionEmail = AppSession().email ?? '';
+    if (sessionEmail.isNotEmpty && sessionEmail.contains('@')) return sessionEmail;
+    return authEmail.isNotEmpty ? authEmail : sessionEmail;
+  }
   Timer? _timer;
   bool _isCheckingInOut = false;
 
@@ -34,8 +41,6 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
   @override
   void initState() {
     super.initState();
-    _attendanceStream =
-        FirestoreService.userAttendanceCol(_user?.email ?? '').snapshots();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -55,7 +60,7 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
     setState(() => _isCheckingInOut = true);
     try {
       final now = DateTime.now();
-      final email = _user?.email ?? '';
+      final email = _userEmail;
       final data = {
         'companyId': FirestoreService.companyId,
         'userId': email,
@@ -78,7 +83,7 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
         body:
             'You have successfully ${isCheckIn ? 'checked in' : 'checked out'} at ${DateFormat('hh:mm a').format(now)}.',
         type: isCheckIn ? 'check_in' : 'check_out',
-        extraData: {'userId': _user?.uid},
+        extraData: {'userId': FirebaseAuth.instance.currentUser?.uid ?? AppSession().uid},
       );
 
       if (isCheckIn) {
@@ -103,7 +108,7 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: _attendanceStream,
+      stream: FirestoreService.userAttendanceCol(_userEmail).snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(
@@ -468,7 +473,7 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
               try {
                 final doc = docs.firstWhere((d) => d.id == dayStr);
                 final d = doc.data() as Map<String, dynamic>;
-                final rawStatus = (d['status'] ?? '').toString().toLowerCase();
+                final rawStatus = (d['status'] ?? d['attendanceStatus'] ?? '').toString().toLowerCase();
                 final workMode = (d['workMode'] ?? '').toString().toLowerCase();
                 if (rawStatus.contains('leave')) {
                   status = 'leave';
@@ -476,7 +481,7 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
                   status = 'wfh';
                 } else if (rawStatus.contains('late')) {
                   status = 'late';
-                } else if (d['checkIn'] != null) {
+                } else if (d['checkIn'] != null || d['checkInTime'] != null || d['lastCheckIn'] != null || rawStatus.contains('present') || rawStatus.contains('checked')) {
                   status = 'present';
                 }
               } catch (_) {}
@@ -586,7 +591,7 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
       final date = doc.id; // yyyy-MM-dd
       if (!date.startsWith(DateFormat('yyyy-MM').format(now))) continue;
 
-      final rawStatus = (d['status'] ?? '').toString().toLowerCase();
+      final rawStatus = (d['status'] ?? d['attendanceStatus'] ?? '').toString().toLowerCase();
       final workMode = (d['workMode'] ?? '').toString().toLowerCase();
 
       if (rawStatus.contains('leave')) {
@@ -595,7 +600,7 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
         wfh++;
       } else if (rawStatus.contains('late')) {
         late++;
-      } else if (d['checkIn'] != null) {
+      } else if (d['checkIn'] != null || d['checkInTime'] != null || d['lastCheckIn'] != null || rawStatus.contains('present') || rawStatus.contains('checked')) {
         present++;
       }
     }
@@ -809,7 +814,8 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
             title: 'Request Regularization',
             subtitle: 'Correct missed attendance',
             onTap: () {
-              // Navigate to correction screen
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const EmployeeAttendanceCorrectionScreen()));
             },
           ),
           Divider(height: 1, color: AppTheme.divider.withOpacity(0.5)),
@@ -819,7 +825,8 @@ class _AttendanceOverviewTabState extends State<AttendanceOverviewTab> {
             title: 'View Attendance Calendar',
             subtitle: 'Monthly attendance overview',
             onTap: () {
-              // Navigate to calendar
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const EmployeeCalendarTab()));
             },
           ),
         ],

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
@@ -250,7 +250,7 @@ class RequestDetailScreen extends StatelessWidget {
                 await FirebaseFirestore.instance
                     .collection('organizations')
                     .doc(_getCompanyId())
-                    .collection('attendance_corrections')
+                    .collection('attendance_issues')
                     .doc(item['id'])
                     .delete();
                 if (context.mounted) Navigator.pop(context);

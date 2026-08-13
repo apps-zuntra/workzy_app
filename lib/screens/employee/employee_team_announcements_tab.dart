@@ -165,7 +165,10 @@ class _EmployeeTeamAnnouncementsTabState
       final data = snapshot.data() as Map<String, dynamic>?;
       final currentLikes = data?['likes'] ?? 0;
       transaction.update(ref, {'likes': currentLikes + 1});
-    }).catchError((error) => debugPrint("Failed to update likes: $error"));
+    }).catchError((error) {
+      debugPrint("Failed to update likes: $error");
+      return null;
+    });
   }
 
   Widget _buildAnnouncementCard(DocumentSnapshot doc) {

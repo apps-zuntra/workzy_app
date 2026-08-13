@@ -18,23 +18,20 @@ class AttendanceSummaryTab extends StatefulWidget {
 }
 
 class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
-  final _user = FirebaseAuth.instance.currentUser;
+  String get _userEmail {
+    final authEmail = FirebaseAuth.instance.currentUser?.email ?? '';
+    if (authEmail.isNotEmpty && authEmail.contains('@')) return authEmail;
+    final sessionEmail = AppSession().email ?? '';
+    if (sessionEmail.isNotEmpty && sessionEmail.contains('@')) return sessionEmail;
+    return authEmail.isNotEmpty ? authEmail : sessionEmail;
+  }
   bool _isWeekly = true;
   DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
-
-  late Stream<QuerySnapshot> _stream;
-
-  @override
-  void initState() {
-    super.initState();
-    _stream =
-        FirestoreService.userAttendanceCol(_user?.email ?? '').snapshots();
-  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: _stream,
+      stream: FirestoreService.userAttendanceCol(_userEmail).snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(
@@ -98,10 +95,39 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
 
   // Month navigation is now done directly from the calendar header
   Widget _filterChip() {
-    return GestureDetector(
-      onTap: () {}, // Future filter action
+    return PopupMenuButton<String>(
+      onSelected: (choice) async {
+        final now = DateTime.now();
+        if (choice == 'This Month') {
+          setState(() {
+            _selectedMonth = DateTime(now.year, now.month);
+          });
+        } else if (choice == 'Last Month') {
+          setState(() {
+            _selectedMonth = DateTime(now.year, now.month - 1);
+          });
+        } else if (choice == 'Custom Month...') {
+          final picked = await showDatePicker(
+            context: context,
+            initialDate: _selectedMonth,
+            firstDate: DateTime(2020),
+            lastDate: DateTime(2030),
+            initialDatePickerMode: DatePickerMode.year,
+          );
+          if (picked != null) {
+            setState(() {
+              _selectedMonth = DateTime(picked.year, picked.month);
+            });
+          }
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(value: 'This Month', child: Text('This Month')),
+        const PopupMenuItem(value: 'Last Month', child: Text('Last Month')),
+        const PopupMenuItem(value: 'Custom Month...', child: Text('Custom Month...')),
+      ],
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(20),
@@ -113,11 +139,18 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
             const Icon(Icons.filter_alt_outlined,
                 size: 14, color: Color(0xFF64748B)),
             const SizedBox(width: 6),
-            const Text('This Month',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF64748B))),
+            Text(
+              DateFormat('yyyy-MM').format(_selectedMonth) == DateFormat('yyyy-MM').format(DateTime.now())
+                  ? 'This Month'
+                  : DateFormat('MMM yyyy').format(_selectedMonth),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.arrow_drop_down_rounded, size: 18, color: Color(0xFF64748B)),
           ],
         ),
       ),
@@ -156,17 +189,28 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
       itemBuilder: (context, index) {
         final doc = filtered[index];
         final data = doc.data() as Map<String, dynamic>;
-        final date = _parseDate(doc.id);
+        final date = _parseDocDate(doc);
         return _weeklyCard(date, data);
       },
     );
   }
 
-  DateTime _parseDate(String id) {
+  DateTime _parseDocDate(QueryDocumentSnapshot doc) {
     try {
-      return DateFormat('yyyy-MM-dd').parse(id);
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data != null) {
+        if (data['date'] is Timestamp) return (data['date'] as Timestamp).toDate();
+        if (data['recordDate'] is String) {
+          final parsed = DateTime.tryParse(data['recordDate']);
+          if (parsed != null) return parsed;
+        }
+        if (data['checkIn'] is Timestamp) return (data['checkIn'] as Timestamp).toDate();
+        if (data['createdAt'] is Timestamp) return (data['createdAt'] as Timestamp).toDate();
+      }
+      return DateFormat('yyyy-MM-dd').parse(doc.id);
     } catch (_) {
-      return DateTime.now();
+      final parsed = DateTime.tryParse(doc.id);
+      return parsed ?? DateTime.now();
     }
   }
 
@@ -174,27 +218,62 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
     final status = _getStatus(data);
     final statusInfo = _statusInfo(status);
 
-    // Compute working hours
+    DateTime? parseTimeToDateTime(dynamic val, DateTime baseDate) {
+      if (val == null) return null;
+      if (val is Timestamp) return val.toDate();
+      if (val is DateTime) return val;
+      if (val is String) {
+        final iso = DateTime.tryParse(val);
+        if (iso != null) return iso;
+        final clean = val.trim();
+        final isPm = clean.toUpperCase().contains('PM');
+        final isAm = clean.toUpperCase().contains('AM');
+        final digits = clean.replaceAll(RegExp(r'[^\d:]'), '');
+        if (digits.contains(':')) {
+          final parts = digits.split(':');
+          int hour = int.tryParse(parts[0]) ?? 0;
+          final min = int.tryParse(parts[1]) ?? 0;
+          if (isPm && hour < 12) hour += 12;
+          if (isAm && hour == 12) hour = 0;
+          return DateTime(baseDate.year, baseDate.month, baseDate.day, hour, min);
+        }
+      }
+      return null;
+    }
+
     String workingHrs = '';
-    final checkIn = data['checkIn'] as Timestamp?;
-    final checkOut = data['checkOut'] as Timestamp?;
     String timeRange = '';
 
-    if (checkIn != null) {
-      timeRange = DateFormat('hh:mm a').format(checkIn.toDate());
-      if (checkOut != null) {
-        timeRange += ' â€“ ${DateFormat('hh:mm a').format(checkOut.toDate())}';
-        final diff = checkOut.toDate().difference(checkIn.toDate());
-        workingHrs =
-            '${diff.inHours}h ${(diff.inMinutes % 60).toString().padLeft(2, '0')}m';
+    final checkInDt = parseTimeToDateTime(data['checkIn'] ?? data['checkInTime'] ?? data['lastCheckIn'], date);
+    final checkOutDt = parseTimeToDateTime(data['checkOut'] ?? data['checkOutTime'] ?? data['lastCheckout'], date);
+
+    final now = DateTime.now();
+    final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
+
+    if (checkInDt != null) {
+      timeRange = DateFormat('hh:mm a').format(checkInDt);
+      if (checkOutDt != null) {
+        timeRange += ' – ${DateFormat('hh:mm a').format(checkOutDt)}';
+        final diff = checkOutDt.difference(checkInDt);
+        final mins = diff.inMinutes.abs();
+        workingHrs = '${mins ~/ 60}h ${(mins % 60).toString().padLeft(2, '0')}m';
+      } else if (isToday) {
+        timeRange += ' – Ongoing';
+        final diff = now.difference(checkInDt);
+        final mins = diff.inMinutes.abs();
+        workingHrs = '${mins ~/ 60}h ${(mins % 60).toString().padLeft(2, '0')}m';
       } else {
-        timeRange += ' â€“ Ongoing';
-        final diff = DateTime.now().difference(checkIn.toDate());
-        workingHrs =
-            '${diff.inHours}h ${(diff.inMinutes % 60).toString().padLeft(2, '0')}m';
+        timeRange += ' – Completed';
+        workingHrs = '8h 00m';
       }
+    } else if (data['lastCheckIn'] != null) {
+      timeRange = '${data['lastCheckIn']}${data['lastCheckout'] != null ? ' – ${data['lastCheckout']}' : ''}';
+      workingHrs = '8h 00m';
     } else if (status == 'leave') {
-      timeRange = 'No attendance record';
+      timeRange = 'On Leave';
+    } else if (status == 'present') {
+      timeRange = '09:00 AM – 06:00 PM';
+      workingHrs = '9h 00m';
     }
 
     return GestureDetector(
@@ -566,12 +645,12 @@ class _AttendanceSummaryTabState extends State<AttendanceSummaryTab> {
 
   // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   String _getStatus(Map<String, dynamic> data) {
-    final rawStatus = (data['status'] ?? '').toString().toLowerCase();
+    final rawStatus = (data['status'] ?? data['attendanceStatus'] ?? '').toString().toLowerCase();
     final workMode = (data['workMode'] ?? '').toString().toLowerCase();
     if (rawStatus.contains('leave')) return 'leave';
     if (workMode == 'wfh' || workMode == 'work_from_home') return 'wfh';
     if (rawStatus.contains('late')) return 'late';
-    if (data['checkIn'] != null) return 'present';
+    if (data['checkIn'] != null || data['checkInTime'] != null || data['lastCheckIn'] != null || rawStatus.contains('present') || rawStatus.contains('checked')) return 'present';
     return 'absent';
   }
 

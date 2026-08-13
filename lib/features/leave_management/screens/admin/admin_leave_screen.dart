@@ -11,6 +11,7 @@ import 'package:attendance_app/utils/notification_helper.dart';
 import 'package:attendance_app/screens/profile_screen.dart';
 import 'package:attendance_app/screens/auth_wrapper.dart';
 import 'package:attendance_app/screens/employee/apply_leave_screen.dart';
+import 'package:attendance_app/widgets/notification_action.dart';
 
 class AdminLeaveScreen extends StatefulWidget {
   const AdminLeaveScreen({super.key});
@@ -120,65 +121,21 @@ class _AdminLeaveScreenState extends State<AdminLeaveScreen> {
                       rawName = data['name'].toString();
                     }
                     final firstName = rawName.split(' ').first;
-                    final role = AppSession().role?.toUpperCase() ?? 'ADMIN';
-                    final greeting = _getGreeting();
-                    final dateStr = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '$greeting, $firstName',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF1F2937),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '$role · $dateStr',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF6B7280),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+                    return const Text(
+                      'Leave Management',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1F2937),
+                      ),
                     );
                   },
                 ),
               ),
               Row(
                 children: [
-                  Stack(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                          color: Colors.white,
-                        ),
-                        child: const Icon(Icons.notifications_none_rounded, size: 20, color: Color(0xFF4B5563)),
-                      ),
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        child: Container(
-                          width: 14,
-                          height: 14,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFEF4444),
-                            shape: BoxShape.circle,
-                          ),
-                          alignment: Alignment.center,
-                          child: const Text('3', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 12),
+                  const NotificationAction(isManager: false),
+                  const SizedBox(width: 8),
                   PopupMenuButton<String>(
                     offset: const Offset(0, 40),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -254,18 +211,8 @@ class _AdminLeaveScreenState extends State<AdminLeaveScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          // Screen title
-          const Text(
-            'Leave Management',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF1F2937),
-            ),
-          ),
-          const SizedBox(height: 16),
-            _buildTabSwitcher(),
+          const SizedBox(height: 12),
+          _buildTabSwitcher(),
           const SizedBox(height: 4),
         ],
       ),
@@ -1132,31 +1079,49 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
 
             for (final doc in leaveDocs) {
               final data = doc.data() as Map<String, dynamic>;
-              final email = data['email'] as String? ?? '';
-              final status =
-                  (data['status'] as String? ?? '').toLowerCase();
-              final fromTs = data['fromDate'] as Timestamp?;
-              final toTs = data['toDate'] as Timestamp?;
+              // For subcollection docs the email is in the parent path
+              final pathEmail = doc.reference.parent.parent?.id ?? '';
+              final email = (
+                data['applicantEmail'] ??
+                data['employeeEmail'] ??
+                data['email'] ??
+                (pathEmail.contains('@') ? pathEmail : null) ??
+                ''
+              ).toString().toLowerCase().trim();
+              final status = (data['status'] as String? ?? '').toLowerCase();
+
+              // Parse date with multiple field variants
+              Timestamp? parseTs(dynamic val) {
+                if (val is Timestamp) return val;
+                if (val is DateTime) return Timestamp.fromDate(val);
+                if (val is String) {
+                  final dt = DateTime.tryParse(val);
+                  if (dt != null) return Timestamp.fromDate(dt);
+                }
+                return null;
+              }
+
+              final fromTs = parseTs(data['fromDate'] ?? data['from'] ?? data['startDate']);
+              final toTs = parseTs(data['toDate'] ?? data['to'] ?? data['endDate']);
 
               if (status == 'pending') {
                 pendingApprovals++;
-                empPendingCount[email] =
-                    (empPendingCount[email] ?? 0) + 1;
+                if (email.isNotEmpty) {
+                  empPendingCount[email] = (empPendingCount[email] ?? 0) + 1;
+                }
               }
 
               if (fromTs != null && toTs != null) {
                 final from = fromTs.toDate();
                 final to = toTs.toDate();
-                final fromDate =
-                    DateTime(from.year, from.month, from.day);
-                final toDate =
-                    DateTime(to.year, to.month, to.day);
+                final fromDate = DateTime(from.year, from.month, from.day);
+                final toDate = DateTime(to.year, to.month, to.day);
 
                 if (status == 'approved' &&
                     !todayDate.isBefore(fromDate) &&
                     !todayDate.isAfter(toDate)) {
                   onLeaveToday++;
-                  empLeaveStatus[email] = 'onLeave';
+                  if (email.isNotEmpty) empLeaveStatus[email] = 'onLeave';
                 }
 
                 if (status == 'approved' &&
@@ -1168,20 +1133,22 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
               }
             }
 
-            // Collect unique departments and stats
+            // Collect unique departments and stats (pending count per dept)
             final deptStats = <String, Map<String, int>>{};
             for (final emp in empDocs) {
               final data = emp.data() as Map;
-              final dept = data['department'] as String?;
-              final email = data['email'] as String? ?? '';
+              final dept = (data['department'] ?? data['dept'] ?? '').toString().trim();
+              final email = (data['email'] ?? data['userEmail'] ?? emp.id).toString().toLowerCase().trim();
               final pending = empPendingCount[email] ?? 0;
-              
-              if (dept != null && dept.isNotEmpty) {
+
+              if (dept.isNotEmpty) {
                 if (!deptStats.containsKey(dept)) {
                   deptStats[dept] = {'total': 0, 'pending': 0};
                 }
                 deptStats[dept]!['total'] = (deptStats[dept]!['total'] ?? 0) + 1;
-                deptStats[dept]!['pending'] = (deptStats[dept]!['pending'] ?? 0) + pending;
+                if (pending > 0) {
+                  deptStats[dept]!['pending'] = (deptStats[dept]!['pending'] ?? 0) + pending;
+                }
               }
             }
 
@@ -1207,9 +1174,9 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
             // Sort: on leave > pending > rest
             filtered.sort((a, b) {
               final ae =
-                  (a.data() as Map)['email'] as String? ?? '';
+                  (a.data() as Map)['email'] as String? ?? a.id;
               final be =
-                  (b.data() as Map)['email'] as String? ?? '';
+                  (b.data() as Map)['email'] as String? ?? b.id;
               final aOnLeave =
                   empLeaveStatus[ae] == 'onLeave' ? 0 : 1;
               final bOnLeave =
@@ -1253,11 +1220,11 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
                       final emp = filtered[index];
                       final data = emp.data() as Map;
                       final email =
-                          data['email'] as String? ?? '';
+                          (data['email'] ?? data['userEmail'] ?? emp.id).toString().toLowerCase().trim();
                       final name =
-                          data['name'] as String? ?? email;
+                          (data['name'] ?? data['firstName'] ?? email).toString();
                       final dept =
-                          data['department'] as String? ?? '';
+                          (data['department'] ?? data['dept'] ?? '').toString();
                       final pending =
                           empPendingCount[email] ?? 0;
                       final isOnLeave =
@@ -1266,13 +1233,10 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
                       final taken = leaveDocs
                           .where((d) {
                             final dd = d.data() as Map;
-                            final de =
-                                dd['email'] as String? ?? '';
-                            final ds = (dd['status'] as String? ??
-                                    '')
-                                .toLowerCase();
-                            if (de != email || ds != 'approved')
-                              return false;
+                            final pathE = d.reference.parent.parent?.id ?? '';
+                            final de = (dd['applicantEmail'] ?? dd['employeeEmail'] ?? dd['email'] ?? (pathE.contains('@') ? pathE : null) ?? '').toString().toLowerCase().trim();
+                            final ds = (dd['status'] as String? ?? '').toLowerCase();
+                            if (de != email || ds != 'approved') return false;
                             final fromTs =
                                 dd['fromDate'] as Timestamp?;
                             final toTs =
@@ -1349,35 +1313,65 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'COMPANY LEAVE STATUS',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF6B7280),
-              letterSpacing: 0.5,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'COMPANY LEAVE STATUS',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF374151),
+                  letterSpacing: 0.5,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  DateFormat('MMM yyyy').format(DateTime.now()).toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF6B7280),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           Row(
             children: [
               _statCard(
-                  onLeaveToday.toString(),
-                  'On Leave Today',
-                  const Color(0xFFA855F7), // Purple
-                  const Color(0xFFFAF5FF)),
+                onLeaveToday.toString(),
+                'On Leave',
+                Icons.flight_takeoff_rounded,
+                const Color(0xFFA855F7), // Purple
+                const Color(0xFFFAF5FF),
+                const Color(0xFFF3E8FF),
+              ),
               const SizedBox(width: 10),
               _statCard(
-                  pendingApprovals.toString(),
-                  'Pending Approval',
-                  const Color(0xFFD97706), // Orange
-                  const Color(0xFFFEFCE8)),
+                pendingApprovals.toString(),
+                'Pending',
+                Icons.pending_actions_rounded,
+                const Color(0xFFD97706), // Amber
+                const Color(0xFFFEFCE8),
+                const Color(0xFFFEF3C7),
+              ),
               const SizedBox(width: 10),
               _statCard(
-                  totalThisMonth.toString(),
-                  'Total This Month',
-                  const Color(0xFF3B82F6), // Blue
-                  const Color(0xFFEFF6FF)),
+                totalThisMonth.toString(),
+                'This Month',
+                Icons.calendar_month_rounded,
+                const Color(0xFF3B82F6), // Blue
+                const Color(0xFFEFF6FF),
+                const Color(0xFFDBEAFE),
+              ),
             ],
           ),
         ],
@@ -1386,36 +1380,50 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
   }
 
   Widget _statCard(
-      String value, String label, Color color, Color bgColor) {
+      String value, String label, IconData icon, Color color, Color bgColor, Color borderColor) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(
-            vertical: 16, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
         decoration: BoxDecoration(
           color: bgColor,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: borderColor),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            )
+          ],
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: color,
-                height: 1.0,
-              ),
-              textAlign: TextAlign.center,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                    height: 1.0,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 6),
             Text(
               label,
               style: const TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF6B7280),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF4B5563),
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
             ),
           ],
@@ -1426,10 +1434,13 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
 
   Widget _buildDeptChips(Map<String, Map<String, int>> deptStats) {
     final colors = [
+      const Color(0xFF5C5CFF), // Indigo
+      const Color(0xFF10B981), // Emerald
+      const Color(0xFFF59E0B), // Amber
+      const Color(0xFF3B82F6), // Blue
+      const Color(0xFFEF4444), // Red
       const Color(0xFFA855F7), // Purple
-      const Color(0xFFA855F7), // Purple
-      const Color(0xFFD97706), // Orange
-      const Color(0xFF10B981), // Green
+      const Color(0xFF14B8A6), // Teal
       const Color(0xFFF43F5E), // Rose
     ];
     int colorIndex = 0;
@@ -1454,7 +1465,6 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
 
   Widget _deptChip(String dept, int total, int pending, Color color) {
     final isActive = _selectedDeptFilter == dept;
-    final shortName = dept.length > 4 ? dept.substring(0, 4) : dept;
 
     return GestureDetector(
       onTap: () {
@@ -1462,49 +1472,69 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
           _selectedDeptFilter = isActive ? null : dept;
         });
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.05),
+          color: isActive ? color : color.withOpacity(0.06),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: color.withValues(alpha: 0.4),
+            color: isActive ? color : color.withOpacity(0.3),
             width: isActive ? 2 : 1,
           ),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: color.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : null,
         ),
-        child: Column(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              total.toString(),
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: color,
-                height: 1.0,
-              ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  dept,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: isActive ? Colors.white : const Color(0xFF1F2937),
+                  ),
+                ),
+                if (pending > 0)
+                  Text(
+                    '$pending pending',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: isActive ? Colors.white.withOpacity(0.9) : const Color(0xFFC2410C),
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              shortName,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF4B5563),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: isActive ? Colors.white.withOpacity(0.25) : color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
               ),
-            ),
-            if (pending > 0) ...[
-              const SizedBox(height: 4),
-              Text(
-                '$pending pend.',
-                style: const TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFFC2410C), // Darker orange/red
+              child: Text(
+                total.toString(),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: isActive ? Colors.white : color,
                 ),
               ),
-            ],
+            ),
           ],
         ),
       ),
@@ -1633,34 +1663,34 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFECFDF5),
+                  color: const Color(0xFFF5F3FF),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                       color:
-                          const Color(0xFF10B981).withOpacity(0.3)),
+                          const Color(0xFFA855F7).withOpacity(0.3)),
                 ),
                 child: const Text('On Leave',
                     style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF10B981))),
+                        color: Color(0xFFA855F7))),
               )
             else if (pendingCount > 0)
               Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFFBEB),
+                  color: const Color(0xFFFEFCE8),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                       color:
-                          const Color(0xFFF59E0B).withOpacity(0.3)),
+                          const Color(0xFFD97706).withOpacity(0.3)),
                 ),
                 child: Text('$pendingCount pending',
                     style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFFF59E0B))),
+                        color: Color(0xFFD97706))),
               ),
             const SizedBox(width: 8),
             const Icon(Icons.chevron_right_rounded,
@@ -1689,231 +1719,422 @@ class _TeamLeaveTabState extends State<_TeamLeaveTab> {
     String department,
     List<QueryDocumentSnapshot> allLeaveDocs,
   ) {
-    final empLeaves = allLeaveDocs
-        .where((d) => (d.data() as Map)['email'] == email)
-        .toList()
-      ..sort((a, b) {
-        final aDate =
-            (a.data() as Map)['requestDate'] as Timestamp?;
-        final bDate =
-            (b.data() as Map)['requestDate'] as Timestamp?;
-        if (aDate == null) return 1;
-        if (bDate == null) return -1;
-        return bDate.compareTo(aDate);
-      });
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.75,
-        maxChildSize: 0.95,
-        minChildSize: 0.4,
-        builder: (ctx, scrollController) => Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF7F8FC),
-            borderRadius:
-                BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD1D5DB),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
-                        children: [
-                          Text(name,
-                              style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF1F2937))),
-                          Text(department,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF6B7280))),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEEF2FF),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text('${empLeaves.length} requests',
-                          style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.primary)),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, color: Color(0xFFE5E7EB)),
-              Expanded(
-                child: empLeaves.isEmpty
-                    ? const Center(
-                        child: Text('No leave records.',
-                            style: TextStyle(
-                                color: Color(0xFF9CA3AF))))
-                    : ListView.builder(
-                        controller: scrollController,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: empLeaves.length,
-                        itemBuilder: (ctx, i) {
-                          final data =
-                              empLeaves[i].data() as Map;
-                          final status =
-                              (data['status'] as String? ??
-                                      'pending')
-                                  .toLowerCase();
-                          final leaveType =
-                              data['leaveType'] as String? ??
-                                  'Leave';
-                          final fromTs =
-                              data['fromDate'] as Timestamp?;
-                          final toTs =
-                              data['toDate'] as Timestamp?;
-                          int days = 1;
-                          if (fromTs != null && toTs != null) {
-                            final start = fromTs.toDate();
-                            final end = toTs.toDate();
-                            int count = 0;
-                            DateTime current = DateTime(start.year, start.month, start.day);
-                            final limitEnd = DateTime(end.year, end.month, end.day);
-                            while (!current.isAfter(limitEnd)) {
-                              if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
-                                count++;
-                              }
-                              current = current.add(const Duration(days: 1));
-                            }
-                            days = count;
-                          } else {
-                            days = ((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1;
-                          }
-                          final reason =
-                              data['reason'] as String? ?? '';
+      builder: (ctx) => _EmployeeLeaveDetailModal(
+        name: name,
+        email: email,
+        department: department,
+        allLeaveDocs: allLeaveDocs,
+      ),
+    );
+  }
+}
 
-                          Color statusColor;
-                          Color statusBg;
-                          String statusLabel;
-                          switch (status) {
-                            case 'approved':
-                              statusColor =
-                                  const Color(0xFF10B981);
-                              statusBg =
-                                  const Color(0xFFECFDF5);
-                              statusLabel = 'Approved';
-                              break;
-                            case 'rejected':
-                              statusColor =
-                                  const Color(0xFFEF4444);
-                              statusBg =
-                                  const Color(0xFFFEF2F2);
-                              statusLabel = 'Rejected';
-                              break;
-                            default:
-                              statusColor =
-                                  const Color(0xFFF59E0B);
-                              statusBg =
-                                  const Color(0xFFFFFBEB);
-                              statusLabel = 'Pending';
-                          }
+class _EmployeeLeaveDetailModal extends StatefulWidget {
+  final String name;
+  final String email;
+  final String department;
+  final List<QueryDocumentSnapshot> allLeaveDocs;
 
-                          return Container(
-                            margin:
-                                const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius:
-                                  BorderRadius.circular(12),
-                              border: Border.all(
-                                  color:
-                                      const Color(0xFFF3F4F6)),
+  const _EmployeeLeaveDetailModal({
+    required this.name,
+    required this.email,
+    required this.department,
+    required this.allLeaveDocs,
+  });
+
+  @override
+  State<_EmployeeLeaveDetailModal> createState() => _EmployeeLeaveDetailModalState();
+}
+
+class _EmployeeLeaveDetailModalState extends State<_EmployeeLeaveDetailModal> {
+  String _selectedType = 'All';
+  String? _selectedMonth;
+  String? _selectedYear;
+
+  String _getInitials(String name) {
+    if (name.trim().isEmpty) return '?';
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.length == 1) {
+      return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
+    }
+    return '${parts[0][0]}${parts.last[0]}'.toUpperCase();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final targetEmail = widget.email.toLowerCase().trim();
+
+    Timestamp? parseTs(dynamic val) {
+      if (val is Timestamp) return val;
+      if (val is DateTime) return Timestamp.fromDate(val);
+      if (val is String) {
+        final dt = DateTime.tryParse(val);
+        if (dt != null) return Timestamp.fromDate(dt);
+      }
+      return null;
+    }
+
+    final empLeaves = widget.allLeaveDocs.where((d) {
+      final data = d.data() as Map<String, dynamic>;
+      final pathEmail = d.reference.parent.parent?.id ?? '';
+      final e1 = (data['applicantEmail'] ?? '').toString().toLowerCase().trim();
+      final e2 = (data['employeeEmail'] ?? '').toString().toLowerCase().trim();
+      final e3 = (data['email'] ?? '').toString().toLowerCase().trim();
+      final e4 = pathEmail.contains('@') ? pathEmail : '';
+      return e1 == targetEmail || e2 == targetEmail || e3 == targetEmail || e4 == targetEmail;
+    }).toList();
+
+    int daysTaken = 0;
+    for (final doc in empLeaves) {
+      final d = doc.data() as Map<String, dynamic>;
+      final st = (d['status'] ?? '').toString().toLowerCase();
+      if (st == 'approved') {
+        final fromTs = parseTs(d['fromDate'] ?? d['from'] ?? d['startDate']);
+        final toTs = parseTs(d['toDate'] ?? d['to'] ?? d['endDate']);
+        if (fromTs != null && toTs != null) {
+          final start = fromTs.toDate();
+          final end = toTs.toDate();
+          int count = 0;
+          DateTime cur = DateTime(start.year, start.month, start.day);
+          final limitEnd = DateTime(end.year, end.month, end.day);
+          while (!cur.isAfter(limitEnd)) {
+            if (cur.weekday != DateTime.saturday && cur.weekday != DateTime.sunday) count++;
+            cur = cur.add(const Duration(days: 1));
+          }
+          daysTaken += count;
+        } else {
+          daysTaken += ((d['durationInDays'] ?? d['days']) as num?)?.toInt() ?? 1;
+        }
+      }
+    }
+
+    final filteredLeaves = empLeaves.where((doc) {
+      final d = doc.data() as Map<String, dynamic>;
+      final type = (d['leaveType'] ?? d['type'] ?? 'Leave').toString();
+      if (_selectedType != 'All' && !type.toLowerCase().contains(_selectedType.toLowerCase().replaceAll(' leave', ''))) {
+        return false;
+      }
+      final fromTs = parseTs(d['fromDate'] ?? d['from'] ?? d['startDate']);
+      if (fromTs != null) {
+        final date = fromTs.toDate();
+        if (_selectedMonth != null && DateFormat('MMM').format(date) != _selectedMonth) return false;
+        if (_selectedYear != null && date.year.toString() != _selectedYear) return false;
+      }
+      return true;
+    }).toList()
+      ..sort((a, b) {
+        final aTs = parseTs((a.data() as Map)['fromDate'] ?? (a.data() as Map)['from']);
+        final bTs = parseTs((b.data() as Map)['fromDate'] ?? (b.data() as Map)['from']);
+        if (aTs == null) return 1;
+        if (bTs == null) return -1;
+        return bTs.compareTo(aTs);
+      });
+
+    final initials = _getInitials(widget.name);
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      minChildSize: 0.5,
+      builder: (ctx, scrollController) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF4B5563)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          "${widget.name}'s Leave",
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF1F2937)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF5C5CFF),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            initials,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.name,
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1F2937)),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                widget.department.isNotEmpty ? widget.department : 'Team Member',
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '$daysTaken',
+                              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF5C5CFF)),
                             ),
-                            child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
+                            const Text(
+                              'days taken',
+                              style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: ['All', 'Annual Leave', 'Sick Leave', 'Casual Leave'].map((type) {
+                        final isActive = _selectedType == type;
+                        return GestureDetector(
+                          onTap: () => setState(() => _selectedType = type),
+                          child: Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isActive ? const Color(0xFF5C5CFF) : Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: isActive ? const Color(0xFF5C5CFF) : const Color(0xFFE2E8F0)),
+                            ),
+                            child: Text(
+                              type,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isActive ? Colors.white : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String?>(
+                              value: _selectedMonth,
+                              isExpanded: true,
+                              hint: const Text('All Months', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
+                              items: [
+                                const DropdownMenuItem<String?>(value: null, child: Text('All Months', style: TextStyle(fontSize: 12))),
+                                ...['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                                    .map((m) => DropdownMenuItem<String?>(value: m, child: Text(m, style: const TextStyle(fontSize: 12)))),
+                              ],
+                              onChanged: (val) => setState(() => _selectedMonth = val),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String?>(
+                              value: _selectedYear,
+                              isExpanded: true,
+                              hint: const Text('All Years', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
+                              items: [
+                                const DropdownMenuItem<String?>(value: null, child: Text('All Years', style: TextStyle(fontSize: 12))),
+                                ...['2024', '2025', '2026', '2027']
+                                    .map((y) => DropdownMenuItem<String?>(value: y, child: Text(y, style: const TextStyle(fontSize: 12)))),
+                              ],
+                              onChanged: (val) => setState(() => _selectedYear = val),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (filteredLeaves.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(32),
+                      alignment: Alignment.center,
+                      child: const Text('No leave records found', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13)),
+                    )
+                  else
+                    ...filteredLeaves.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final type = (data['leaveType'] ?? data['type'] ?? 'Leave').toString();
+                      final status = (data['status'] ?? 'pending').toString().toLowerCase();
+                      final fromTs = parseTs(data['fromDate'] ?? data['from'] ?? data['startDate']);
+                      final toTs = parseTs(data['toDate'] ?? data['to'] ?? data['endDate']);
+
+                      // Calculate actual working days
+                      int days = ((data['durationInDays'] ?? data['days']) as num?)?.toInt() ?? 1;
+                      if (fromTs != null && toTs != null) {
+                        final start = fromTs.toDate();
+                        final end = toTs.toDate();
+                        int count = 0;
+                        DateTime cur = DateTime(start.year, start.month, start.day);
+                        final limitEnd = DateTime(end.year, end.month, end.day);
+                        while (!cur.isAfter(limitEnd)) {
+                          if (cur.weekday != DateTime.saturday && cur.weekday != DateTime.sunday) count++;
+                          cur = cur.add(const Duration(days: 1));
+                        }
+                        if (count > 0) days = count;
+                      }
+
+                      String dateRangeStr = '';
+                      if (fromTs != null && toTs != null) {
+                        final from = fromTs.toDate();
+                        final to = toTs.toDate();
+                        if (from.day == to.day && from.month == to.month) {
+                          dateRangeStr = '${DateFormat('MMM d').format(from)} · $days day${days > 1 ? 's' : ''}';
+                        } else {
+                          dateRangeStr = '${DateFormat('MMM d').format(from)} → ${DateFormat('MMM d').format(to)} · $days days';
+                        }
+                      } else if (fromTs != null) {
+                        dateRangeStr = '${DateFormat('MMM d').format(fromTs.toDate())} · $days day';
+                      }
+
+                      Color statusColor;
+                      Color statusBg;
+                      String statusLabel;
+                      switch (status) {
+                        case 'approved':
+                          statusColor = const Color(0xFF16A34A);
+                          statusBg = const Color(0xFFDCFCE7);
+                          statusLabel = 'Approved';
+                          break;
+                        case 'rejected':
+                          statusColor = const Color(0xFFDC2626);
+                          statusBg = const Color(0xFFFEE2E2);
+                          statusLabel = 'Rejected';
+                          break;
+                        default:
+                          statusColor = const Color(0xFFD97706);
+                          statusBg = const Color(0xFFFEFCE8);
+                          statusLabel = 'Pending';
+                      }
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment
-                                          .spaceBetween,
-                                  children: [
-                                    Text(leaveType,
-                                        style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight:
-                                                FontWeight.w700,
-                                            color: Color(
-                                                0xFF1F2937))),
-                                    Container(
-                                      padding: const EdgeInsets
-                                          .symmetric(
-                                          horizontal: 10,
-                                          vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: statusBg,
-                                        borderRadius:
-                                            BorderRadius.circular(
-                                                20),
-                                        border: Border.all(
-                                            color: statusColor
-                                                .withOpacity(
-                                                    0.3)),
-                                      ),
-                                      child: Text(statusLabel,
-                                          style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight:
-                                                  FontWeight.w700,
-                                              color:
-                                                  statusColor)),
-                                    ),
-                                  ],
+                                Text(
+                                  type,
+                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2937)),
                                 ),
-                                const SizedBox(height: 8),
-                                if (fromTs != null &&
-                                    toTs != null)
-                                  Text(
-                                    '${DateFormat('MMM d, yyyy').format(fromTs.toDate())} — ${DateFormat('MMM d, yyyy').format(toTs.toDate())} · $days day${days == 1 ? '' : 's'}',
-                                    style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF6B7280)),
-                                  ),
-                                if (reason.isNotEmpty) ...[
-                                  const SizedBox(height: 6),
-                                  Text(reason,
-                                      style: const TextStyle(
-                                          fontSize: 11,
-                                          color:
-                                              Color(0xFF9CA3AF))),
-                                ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  dateRangeStr,
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                                ),
                               ],
                             ),
-                          );
-                        },
-                      ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: statusBg,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: statusColor.withOpacity(0.3)),
+                              ),
+                              child: Text(
+                                statusLabel,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: statusColor),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  const SizedBox(height: 40),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

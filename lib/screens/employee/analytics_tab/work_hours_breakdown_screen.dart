@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:attendance_app/theme/app_theme.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
+import 'package:attendance_app/utils/app_session.dart';
 
 /// Screen 3 â€” Work Hours Breakdown (matches right panel in mockup)
 class WorkHoursBreakdownScreen extends StatefulWidget {
@@ -19,7 +20,13 @@ class WorkHoursBreakdownScreen extends StatefulWidget {
 }
 
 class _WorkHoursBreakdownScreenState extends State<WorkHoursBreakdownScreen> {
-  final _user = FirebaseAuth.instance.currentUser;
+  String get _userEmail {
+    final authEmail = FirebaseAuth.instance.currentUser?.email ?? '';
+    if (authEmail.isNotEmpty && authEmail.contains('@')) return authEmail;
+    final sessionEmail = AppSession().email ?? '';
+    if (sessionEmail.isNotEmpty && sessionEmail.contains('@')) return sessionEmail;
+    return authEmail.isNotEmpty ? authEmail : sessionEmail;
+  }
   late DateTime _weekStart;
 
   @override
@@ -64,7 +71,7 @@ class _WorkHoursBreakdownScreenState extends State<WorkHoursBreakdownScreen> {
         ],
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirestoreService.userAttendanceCol(_user?.email ?? '').snapshots(),
+        stream: FirestoreService.userAttendanceCol(_userEmail).snapshots(),
         builder: (context, snapshot) {
           final allDocs = snapshot.data?.docs ?? [];
           final weekData = _buildWeekData(allDocs);
@@ -414,16 +421,32 @@ class _WorkHoursBreakdownScreenState extends State<WorkHoursBreakdownScreen> {
       return _DayData(date: date, hours: 0, overtimeHours: 0, isWfh: false);
     });
 
+    Timestamp? parseTs(dynamic val) {
+      if (val == null) return null;
+      if (val is Timestamp) return val;
+      if (val is String) {
+        final parsed = DateTime.tryParse(val);
+        if (parsed != null) return Timestamp.fromDate(parsed);
+      }
+      if (val is DateTime) return Timestamp.fromDate(val);
+      return null;
+    }
+
     for (final doc in allDocs) {
-      final date = DateTime.tryParse(doc.id);
+      final data = doc.data() as Map<String, dynamic>;
+      DateTime? date;
+      if (data['date'] is Timestamp) date = (data['date'] as Timestamp).toDate();
+      if (date == null && data['recordDate'] is String) date = DateTime.tryParse(data['recordDate']);
+      if (date == null && data['checkIn'] is Timestamp) date = (data['checkIn'] as Timestamp).toDate();
+      date ??= DateTime.tryParse(doc.id);
       if (date == null) continue;
+
       final diff = date.difference(_weekStart).inDays;
       if (diff < 0 || diff > 4) continue;
 
-      final data = doc.data() as Map<String, dynamic>;
-      final checkIn = data['checkIn'] as Timestamp?;
-      final checkOut = data['checkOut'] as Timestamp?;
-      final workMode = data['workMode'] as String? ?? 'office';
+      final checkIn = parseTs(data['checkIn'] ?? data['checkInTime']);
+      final checkOut = parseTs(data['checkOut'] ?? data['checkOutTime']);
+      final workMode = (data['workMode'] ?? 'office').toString().toLowerCase();
 
       if (checkIn != null && checkOut != null) {
         final minutes = checkOut.toDate().difference(checkIn.toDate()).inMinutes;

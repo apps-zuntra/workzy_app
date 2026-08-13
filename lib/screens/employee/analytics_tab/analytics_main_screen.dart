@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import 'package:attendance_app/theme/app_theme.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
+import 'package:attendance_app/utils/app_session.dart';
 import 'monthly_summary_screen.dart';
 import 'work_hours_breakdown_screen.dart';
 
@@ -18,7 +19,13 @@ class AnalyticsMainScreen extends StatefulWidget {
 }
 
 class _AnalyticsMainScreenState extends State<AnalyticsMainScreen> {
-  final _user = FirebaseAuth.instance.currentUser;
+  String get _userEmail {
+    final authEmail = FirebaseAuth.instance.currentUser?.email ?? '';
+    if (authEmail.isNotEmpty && authEmail.contains('@')) return authEmail;
+    final sessionEmail = AppSession().email ?? '';
+    if (sessionEmail.isNotEmpty && sessionEmail.contains('@')) return sessionEmail;
+    return authEmail.isNotEmpty ? authEmail : sessionEmail;
+  }
   int _selectedPeriod = 0; // 0=This Month, 1=Last Month, 2=Quarterly, 3=Yearly
   final List<String> _periods = [
     'This Month',
@@ -65,14 +72,22 @@ class _AnalyticsMainScreenState extends State<AnalyticsMainScreen> {
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream:
-          FirestoreService.userAttendanceCol(_user?.email ?? '').snapshots(),
+          FirestoreService.userAttendanceCol(_userEmail).snapshots(),
       builder: (context, snapshot) {
         final range = _getDateRange();
         final docs = snapshot.data?.docs ?? [];
 
         // Filter docs in range
         final filtered = docs.where((d) {
-          final date = DateTime.tryParse(d.id);
+          final data = d.data() as Map<String, dynamic>?;
+          DateTime? date;
+          if (data != null) {
+            if (data['date'] is Timestamp) date = (data['date'] as Timestamp).toDate();
+            if (date == null && data['recordDate'] is String) date = DateTime.tryParse(data['recordDate']);
+            if (date == null && data['checkIn'] is Timestamp) date = (data['checkIn'] as Timestamp).toDate();
+            if (date == null && data['createdAt'] is Timestamp) date = (data['createdAt'] as Timestamp).toDate();
+          }
+          date ??= DateTime.tryParse(d.id);
           if (date == null) return false;
           return !date.isBefore(range.start) && !date.isAfter(range.end);
         }).toList();
@@ -516,19 +531,30 @@ class _AnalyticsMainScreenState extends State<AnalyticsMainScreen> {
     int overtimeMinutes = 0;
     int workingDays = _countWorkingDays(range.start, range.end);
 
+    Timestamp? parseTs(dynamic val) {
+      if (val == null) return null;
+      if (val is Timestamp) return val;
+      if (val is String) {
+        final parsed = DateTime.tryParse(val);
+        if (parsed != null) return Timestamp.fromDate(parsed);
+      }
+      if (val is DateTime) return Timestamp.fromDate(val);
+      return null;
+    }
+
     for (final doc in docs) {
       final data = doc.data() as Map<String, dynamic>;
-      final checkIn = data['checkIn'] as Timestamp?;
-      final checkOut = data['checkOut'] as Timestamp?;
+      final checkIn = parseTs(data['checkIn'] ?? data['checkInTime']);
+      final checkOut = parseTs(data['checkOut'] ?? data['checkOutTime']);
+      final status = (data['status'] ?? '').toString().toLowerCase();
 
-      if (checkIn != null) {
-        final status = data['status'] as String? ?? 'present';
-        if (status == 'late') {
+      if (checkIn != null || status == 'present' || status == 'approved' || status == 'corrected') {
+        if (status.contains('late')) {
           late++;
         }
         present++;
 
-        if (checkOut != null) {
+        if (checkIn != null && checkOut != null) {
           final diff = checkOut.toDate().difference(checkIn.toDate());
           totalMinutes += diff.inMinutes;
           if (diff.inMinutes > 480) {

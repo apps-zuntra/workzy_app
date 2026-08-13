@@ -19,23 +19,20 @@ class AttendanceAnalyticsTab extends StatefulWidget {
 }
 
 class _AttendanceAnalyticsTabState extends State<AttendanceAnalyticsTab> {
-  final _user = FirebaseAuth.instance.currentUser;
+  String get _userEmail {
+    final authEmail = FirebaseAuth.instance.currentUser?.email ?? '';
+    if (authEmail.isNotEmpty && authEmail.contains('@')) return authEmail;
+    final sessionEmail = AppSession().email ?? '';
+    if (sessionEmail.isNotEmpty && sessionEmail.contains('@')) return sessionEmail;
+    return authEmail.isNotEmpty ? authEmail : sessionEmail;
+  }
   int _selectedPeriod = 0; // 0=This Month, 1=Last Month, 2=Quarterly, 3=Yearly
   final _periodLabels = ['This Month', 'Last Month', 'Quarterly', 'Yearly'];
-
-  late Stream<QuerySnapshot> _stream;
-
-  @override
-  void initState() {
-    super.initState();
-    _stream =
-        FirestoreService.userAttendanceCol(_user?.email ?? '').snapshots();
-  }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: _stream,
+      stream: FirestoreService.userAttendanceCol(_userEmail).snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
           return const Center(
@@ -423,17 +420,28 @@ class _AttendanceAnalyticsTabState extends State<AttendanceAnalyticsTab> {
         ((int.tryParse(shiftStartParts[0]) ?? 9) * 60 +
             (int.tryParse(shiftStartParts[1]) ?? 0));
 
+    Timestamp? parseTs(dynamic val) {
+      if (val == null) return null;
+      if (val is Timestamp) return val;
+      if (val is String) {
+        final parsed = DateTime.tryParse(val);
+        if (parsed != null) return Timestamp.fromDate(parsed);
+      }
+      if (val is DateTime) return Timestamp.fromDate(val);
+      return null;
+    }
+
     for (final doc in currentDocs) {
       final data = doc.data() as Map<String, dynamic>;
-      final checkIn = data['checkIn'] as Timestamp?;
-      final checkOut = data['checkOut'] as Timestamp?;
+      final checkIn = parseTs(data['checkIn'] ?? data['checkInTime']);
+      final checkOut = parseTs(data['checkOut'] ?? data['checkOutTime']);
       final rawStatus = (data['status'] ?? '').toString().toLowerCase();
 
-      if (checkIn != null) {
+      if (checkIn != null || rawStatus == 'present' || rawStatus == 'approved' || rawStatus == 'corrected') {
         present++;
         if (rawStatus.contains('late')) late++;
 
-        if (checkOut != null) {
+        if (checkIn != null && checkOut != null) {
           final diff = checkOut.toDate().difference(checkIn.toDate());
           totalMinutes += diff.inMinutes;
           final overtime = diff.inMinutes - shiftDurationMinutes;
@@ -452,11 +460,12 @@ class _AttendanceAnalyticsTabState extends State<AttendanceAnalyticsTab> {
     int prevPresent = 0, prevLate = 0, prevTotalMinutes = 0;
     for (final doc in prevDocs) {
       final data = doc.data() as Map<String, dynamic>;
-      if ((data['checkIn'] as Timestamp?) != null) {
+      final ci = parseTs(data['checkIn'] ?? data['checkInTime']);
+      final co = parseTs(data['checkOut'] ?? data['checkOutTime']);
+      final rawStatus = (data['status'] ?? '').toString().toLowerCase();
+      if (ci != null || rawStatus == 'present' || rawStatus == 'approved') {
         prevPresent++;
-        if ((data['status'] ?? '').toString().toLowerCase().contains('late')) prevLate++;
-        final ci = data['checkIn'] as Timestamp?;
-        final co = data['checkOut'] as Timestamp?;
+        if (rawStatus.contains('late')) prevLate++;
         if (ci != null && co != null) {
           prevTotalMinutes += co.toDate().difference(ci.toDate()).inMinutes;
         }
@@ -512,7 +521,17 @@ class _AttendanceAnalyticsTabState extends State<AttendanceAnalyticsTab> {
       List<QueryDocumentSnapshot> docs, DateTime start, DateTime end) {
     return docs.where((d) {
       try {
-        final date = DateFormat('yyyy-MM-dd').parse(d.id);
+        final data = d.data() as Map<String, dynamic>?;
+        DateTime? date;
+        if (data != null) {
+          if (data['date'] is Timestamp) date = (data['date'] as Timestamp).toDate();
+          if (date == null && data['recordDate'] is String) date = DateTime.tryParse(data['recordDate']);
+          if (date == null && data['checkIn'] is Timestamp) date = (data['checkIn'] as Timestamp).toDate();
+          if (date == null && data['createdAt'] is Timestamp) date = (data['createdAt'] as Timestamp).toDate();
+        }
+        date ??= DateTime.tryParse(d.id);
+        date ??= DateFormat('yyyy-MM-dd').parse(d.id);
+        
         return !date.isBefore(start) && !date.isAfter(end);
       } catch (_) {
         return false;

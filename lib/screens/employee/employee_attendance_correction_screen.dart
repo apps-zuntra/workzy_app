@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -118,7 +118,7 @@ class _EmployeeAttendanceCorrectionScreenState
       await FirebaseFirestore.instance
           .collection('organizations')
           .doc(FirestoreService.companyId)
-          .collection('attendance_corrections')
+          .collection('attendance_issues')
           .add({
         'userId': user.email,
         'attendanceDate': Timestamp.fromDate(_selectedDate),

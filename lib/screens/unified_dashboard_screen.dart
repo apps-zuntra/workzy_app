@@ -34,6 +34,9 @@ import 'package:attendance_app/features/leave_management/screens/admin/admin_lea
 import 'package:attendance_app/features/leave_management/screens/admin/admin_leave_tab.dart';
 import 'package:attendance_app/features/leave_management/screens/shared/universal_leave_tab.dart';
 import 'package:attendance_app/screens/more/universal_more_tab.dart';
+import 'package:attendance_app/screens/employee/apply_leave_screen.dart';
+import 'package:attendance_app/screens/employee/requests_tab/request_correction_form.dart';
+import 'package:attendance_app/widgets/notification_action.dart';
 
 class UnifiedDashboardScreen extends StatefulWidget {
   const UnifiedDashboardScreen({super.key});
@@ -54,6 +57,9 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
       0; // 0: Dashboard, 1: Approvals, 2: Leave, 3: Announcements, 4: Calendar
   int _bottomNavIndex = 0;
   bool _isCreatingAnnouncement = false;
+  bool _isSpeedDialOpen = false;
+  int? _hoveredOptionIndex;
+  Offset _dragStartPos = Offset.zero;
 
   // Approvals State
   int _selectedApprovalTab =
@@ -98,7 +104,12 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     super.initState();
     orgId = AppSession().companyId ?? '';
     _orgUsersStream = FirestoreService.employeesCol.snapshots();
-    final userEmail = user?.email ?? '';
+    final userEmail = (user?.email ??
+            AppSession().email ??
+            FirebaseAuth.instance.currentUser?.email ??
+            '')
+        .trim()
+        .toLowerCase();
     _todayRef = FirestoreService.userAttendanceCol(userEmail);
     _todayAttendanceStream = _todayRef.doc(_getAttendanceDocId()).snapshots();
 
@@ -291,16 +302,15 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
       }
     }
 
-    _subPendingLeaves = FirestoreService.allLeaveRequestsQuery
-        .snapshots()
-        .listen((s) {
+    _subPendingLeaves =
+        FirestoreService.allLeaveRequestsQuery.snapshots().listen((s) {
       leavePending = s.docs.where((d) {
         final data = d.data() as Map;
         return data['status'] == 'pending' && data['companyId'] == orgId;
       }).length;
       emitPending();
     }, onError: (_) {});
-    _subPendingAtt = FirestoreService.allAttendanceCorrectionsQuery
+    _subPendingAtt = FirestoreService.allAttendanceIssuesQuery
         .where('status', isEqualTo: 'pending')
         .snapshots()
         .listen((s) {
@@ -381,15 +391,17 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
 
     _subStatsAtt =
         FirestoreService.allAttendanceRecordsCol.snapshots().listen((snap) {
-      statAttDocs = snap.docs.where((d) => (d.data() as Map)['companyId'] == orgId).toList();
+      statAttDocs = snap.docs
+          .where((d) => (d.data() as Map)['companyId'] == orgId)
+          .toList();
       emitStats();
     }, onError: (_) {});
-    _subStatsLeaves = FirestoreService.allLeaveRequestsQuery
-        .snapshots()
-        .listen((snap) {
+    _subStatsLeaves =
+        FirestoreService.allLeaveRequestsQuery.snapshots().listen((snap) {
       statLeaveDocs = snap.docs.where((d) {
         final data = d.data() as Map;
-        return (data['status'] ?? '').toString().toLowerCase() == 'approved' && data['companyId'] == orgId;
+        return (data['status'] ?? '').toString().toLowerCase() == 'approved' &&
+            data['companyId'] == orgId;
       }).toList();
       emitStats();
     }, onError: (_) {});
@@ -419,7 +431,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         if (tb == null) return -1;
         return tb.compareTo(ta);
       });
-      lastActivityList = combined.take(6).toList();
+      lastActivityList = combined.take(3).toList();
       activityController.add(lastActivityList);
     }
 
@@ -434,12 +446,18 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         .limit(20)
         .snapshots()
         .listen((snap) {
-      final validDocs = snap.docs.where((d) => (d.data() as Map)['companyId'] == orgId);
+      final validDocs =
+          snap.docs.where((d) => (d.data() as Map)['companyId'] == orgId);
       actLeaves = validDocs.map((doc) {
         final d = doc.data() as Map<String, dynamic>;
         final ts = parseTs(d['createdAt'] ?? d['requestDate'] ?? d['applied']);
-        final name = d['userName'] ?? d['empName'] ?? d['applicantName'] ?? d['employee'] ?? 'Employee';
-        final leaveType = (d['leaveType'] ?? d['type'] ?? 'Leave').toString().toUpperCase();
+        final name = d['userName'] ??
+            d['empName'] ??
+            d['applicantName'] ??
+            d['employee'] ??
+            'Employee';
+        final leaveType =
+            (d['leaveType'] ?? d['type'] ?? 'Leave').toString().toUpperCase();
         final status = (d['status'] ?? 'pending').toString().toLowerCase();
         final statusLabel = status == 'approved'
             ? 'approved'
@@ -465,7 +483,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
       emitActivity();
     }, onError: (_) {});
 
-    _subActivityAtt = FirestoreService.allAttendanceCorrectionsQuery
+    _subActivityAtt = FirestoreService.allAttendanceIssuesQuery
         .limit(20)
         .snapshots()
         .listen((snap) {
@@ -499,22 +517,31 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     _allTasksStream = FirestoreService.tasksCol.snapshots();
     _employeesStream = FirestoreService.employeesCol.snapshots();
 
-    final userEmail = AppSession().email ?? '';
-    _myAttendanceStream = FirestoreService.userAttendanceCol(userEmail).snapshots();
+    final userEmail = (user?.email ??
+            AppSession().email ??
+            FirebaseAuth.instance.currentUser?.email ??
+            '')
+        .trim()
+        .toLowerCase();
+    _myAttendanceStream =
+        FirestoreService.userAttendanceCol(userEmail).snapshots();
     _subEmployeesMap = _employeesStream.listen((snap) {
       final newMap = <String, Map<String, dynamic>>{};
-      
+
       final now = DateTime.now();
       final oneWeekAgo = now.subtract(const Duration(days: 7));
       actEmployees.clear();
-      
+
       for (final d in snap.docs) {
         final ed = d.data() as Map<String, dynamic>? ?? {};
         final docId = d.id.toLowerCase();
         newMap[docId] = ed;
-        if (ed['email'] != null) newMap[ed['email'].toString().toLowerCase()] = ed;
-        if (ed['userEmail'] != null) newMap[ed['userEmail'].toString().toLowerCase()] = ed;
-        if (ed['userId'] != null) newMap[ed['userId'].toString().toLowerCase()] = ed;
+        if (ed['email'] != null)
+          newMap[ed['email'].toString().toLowerCase()] = ed;
+        if (ed['userEmail'] != null)
+          newMap[ed['userEmail'].toString().toLowerCase()] = ed;
+        if (ed['userId'] != null)
+          newMap[ed['userId'].toString().toLowerCase()] = ed;
         if (ed['uid'] != null) newMap[ed['uid'].toString().toLowerCase()] = ed;
 
         final createdAtTs = ed['createdAt'] ?? ed['joinedDate'];
@@ -524,7 +551,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         } else if (createdAtTs is String) {
           createdAt = DateTime.tryParse(createdAtTs);
         }
-        
+
         if (createdAt != null && createdAt.isAfter(oneWeekAgo)) {
           final name = ed['name'] ?? ed['userName'] ?? 'New Employee';
           actEmployees.add({
@@ -568,8 +595,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
       leaves = s.docs;
       update();
     }, onError: (_) {});
-    _subAtt =
-        FirestoreService.allAttendanceCorrectionsQuery.snapshots().listen((s) {
+    _subAtt = FirestoreService.allAttendanceIssuesQuery.snapshots().listen((s) {
       attDocs = s.docs;
       update();
     }, onError: (_) {});
@@ -606,87 +632,120 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F9),
-      body: _isCreatingAnnouncement
-          ? CreateAnnouncementWizard(
-              onClose: () => setState(() => _isCreatingAnnouncement = false),
-            )
-          : IndexedStack(
-              index: _bottomNavIndex,
-              children: [
-                SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(),
-                _buildTopNavigation(),
-                _buildSubNavigation(),
-                Expanded(
-                  child: _selectedMainTab == 0
-                      ? (_selectedSubTab == 0
-                          ? _buildDashboardView()
-                          : (_selectedSubTab == 1
-                              ? _buildApprovalsView()
-                              : (_selectedSubTab == 2
-                                  ? const AdminLeaveTab()
-                                  : (_selectedSubTab == 3
-                                      ? AnnouncementsTabView(
-                                          isAdmin: true,
-                                          showBoth: true,
-                                          onCreateAnnouncement: () => setState(() => _isCreatingAnnouncement = true),
-                                        )
-                                      : (_selectedSubTab == 4
-                                          ? const CalendarTabView()
-                                          : (_selectedSubTab == 5
-                                              ? const TasksTabView()
-                                              : const Center(
-                                                  child: Text(
-                                                      'Under Construction'))))))))
-                      : _selectedMainTab == 1
-                          ? (_selectedSubTab == 0
-                              ? const TeamMembersView()
-                              : (_selectedSubTab == 1
-                                  ? const TeamFeedView()
-                                  : (_selectedSubTab == 2
-                                      ? AnnouncementsTabView(
-                                          isAdmin: true,
-                                          isTeamAnnouncements: true,
-                                          onCreateAnnouncement: () => setState(() => _isCreatingAnnouncement = true),
-                                        )
-                                      : (_selectedSubTab == 3
-                                          ? const TeamTasksView()
-                                          : (_selectedSubTab == 4
-                                              ? const TeamDepartmentsView()
-                                              : const Center(
-                                                  child: Text(
-                                                      'Under Construction')))))))
-                          : _selectedMainTab == 2
-                              ? (_selectedSubTab == 0
-                                  ? const OrgOverviewTab()
-                                  : (_selectedSubTab == 1
-                                      ? const OrgPoliciesTab()
-                                      : (_selectedSubTab == 2
-                                          ? AnnouncementsTabView(
-                                              isAdmin: true,
-                                              isTeamAnnouncements: false,
-                                              onCreateAnnouncement: () => setState(() => _isCreatingAnnouncement = true),
-                                            )
-                                          : (_selectedSubTab == 3
-                                              ? const OrgReportsTab()
-                                              : const Center(
-                                                  child: Text(
-                                                      'Under Construction'))))))
-                              : const Center(child: Text('Under Construction')),
-                ),
-              ],
-            ),
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _todayAttendanceStream,
+      builder: (context, attendanceSnap) {
+        final attData = attendanceSnap.data?.data() as Map<String, dynamic>?;
+        final checkIn = attData?['checkIn'] as Timestamp?;
+        final checkOut = attData?['checkOut'] as Timestamp?;
+        final isCheckedIn = checkIn != null && checkOut == null;
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFF4F6F9),
+          body: Stack(
+            children: [
+              _isCreatingAnnouncement
+                  ? CreateAnnouncementWizard(
+                      onClose: () =>
+                          setState(() => _isCreatingAnnouncement = false),
+                    )
+                  : IndexedStack(
+                      index: _bottomNavIndex,
+                      children: [
+                        SafeArea(
+                          child: Column(
+                            children: [
+                              _buildHeader(),
+                              if (_selectedMainTab != 0) _buildTopNavigation(),
+                              if (_selectedMainTab != 0) _buildSubNavigation(),
+                              Expanded(
+                                child: _selectedMainTab == 0
+                                    ? (_selectedSubTab == 0
+                                        ? _buildDashboardView()
+                                        : (_selectedSubTab == 1
+                                            ? _buildApprovalsView()
+                                            : (_selectedSubTab == 2
+                                                ? const AdminLeaveTab()
+                                                : (_selectedSubTab == 3
+                                                    ? AnnouncementsTabView(
+                                                        isAdmin: true,
+                                                        showBoth: true,
+                                                        onCreateAnnouncement:
+                                                            () => setState(() =>
+                                                                _isCreatingAnnouncement =
+                                                                    false),
+                                                      )
+                                                    : (_selectedSubTab == 4
+                                                        ? const CalendarTabView()
+                                                        : (_selectedSubTab == 5
+                                                            ? const TasksTabView()
+                                                            : const Center(
+                                                                child: Text(
+                                                                    'Under Construction'))))))))
+                                    : _selectedMainTab == 1
+                                        ? (_selectedSubTab == 0
+                                            ? const TeamMembersView()
+                                            : (_selectedSubTab == 1
+                                                ? const TeamFeedView()
+                                                : (_selectedSubTab == 2
+                                                    ? AnnouncementsTabView(
+                                                        isAdmin: true,
+                                                        isTeamAnnouncements:
+                                                            true,
+                                                        onCreateAnnouncement:
+                                                            () => setState(() =>
+                                                                _isCreatingAnnouncement =
+                                                                    false),
+                                                      )
+                                                    : (_selectedSubTab == 3
+                                                        ? const TeamTasksView()
+                                                        : (_selectedSubTab == 4
+                                                            ? const TeamDepartmentsView()
+                                                            : const Center(
+                                                                child: Text(
+                                                                    'Under Construction')))))))
+                                        : _selectedMainTab == 2
+                                            ? (_selectedSubTab == 0
+                                                ? const OrgOverviewTab()
+                                                : (_selectedSubTab == 1
+                                                    ? const OrgPoliciesTab()
+                                                    : (_selectedSubTab == 2
+                                                        ? AnnouncementsTabView(
+                                                            isAdmin: true,
+                                                            isTeamAnnouncements:
+                                                                false,
+                                                            onCreateAnnouncement:
+                                                                () => setState(() =>
+                                                                    _isCreatingAnnouncement =
+                                                                        false),
+                                                          )
+                                                        : (_selectedSubTab == 3
+                                                            ? const OrgReportsTab()
+                                                            : const Center(
+                                                                child: Text(
+                                                                    'Under Construction'))))))
+                                            : const Center(
+                                                child:
+                                                    Text('Under Construction')),
+                              ),
+                            ],
+                          ),
+                        ),
+                        AppSession().hasPermission('approve-attendance')
+                            ? const AdminAttendanceScreen()
+                            : const AttendanceScreen(),
+                        AppSession().hasPermission('approve-leave')
+                            ? const AdminLeaveScreen()
+                            : const UniversalLeaveTab(),
+                        const UniversalMoreTab(),
+                      ],
+                    ),
+              _buildSpeedDialOverlay(isCheckedIn),
+            ],
           ),
-          AppSession().hasPermission('approve-attendance') ? const AdminAttendanceScreen() : const AttendanceScreen(),
-          AppSession().hasPermission('approve-leave') ? const AdminLeaveScreen() : const UniversalLeaveTab(),
-          const UniversalMoreTab(),
-        ],
-      ),
-      bottomNavigationBar: _buildBottomNav(),
+          bottomNavigationBar: _buildBottomNav(isCheckedIn),
+        );
+      },
     );
   }
 
@@ -710,28 +769,36 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                     user!.displayName!.trim().isNotEmpty) {
                   rawName = user!.displayName!;
                 }
-                final firstName = rawName.split(' ')[0];
                 final greeting = _getGreeting();
+                final roleStr = AppSession().displayRole;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '$greeting, $firstName',
+                      '$greeting, $rawName',
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF1F2937),
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${(AppSession().role ?? 'Employee').toUpperCase()} - ${DateFormat('EEEE, d MMMM yyyy').format(DateTime.now())}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF6B7280),
-                        fontWeight: FontWeight.w500,
-                      ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        _buildAttractiveRoleBadge(roleStr),
+                        const SizedBox(width: 8),
+                        Text(
+                          DateFormat('EEE, d MMM yyyy').format(DateTime.now()),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF6B7280),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 );
@@ -740,40 +807,8 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
           ),
           Row(
             children: [
-              Stack(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                      color: Colors.white,
-                    ),
-                    child: const Icon(Icons.notifications_none_rounded,
-                        size: 20, color: Color(0xFF4B5563)),
-                  ),
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: Container(
-                      width: 14,
-                      height: 14,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFEF4444),
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text('3',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 8,
-                              fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 12),
+              const NotificationAction(isManager: false),
+              const SizedBox(width: 8),
               PopupMenuButton<String>(
                 offset: const Offset(0, 40),
                 shape: RoundedRectangleBorder(
@@ -860,6 +895,61 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     );
   }
 
+  Widget _buildAttractiveRoleBadge(String roleStr) {
+    IconData roleIcon;
+    List<Color> gradientColors;
+
+    final r = roleStr.toLowerCase();
+    if (r.contains('super admin') || r.contains('superadmin')) {
+      roleIcon = Icons.workspace_premium_rounded;
+      gradientColors = [const Color(0xFF6366F1), const Color(0xFF8B5CF6)];
+    } else if (r.contains('hr admin') || r.contains('hradmin')) {
+      roleIcon = Icons.shield_outlined;
+      gradientColors = [const Color(0xFFEC4899), const Color(0xFF8B5CF6)];
+    } else if (r.contains('manager')) {
+      roleIcon = Icons.badge_outlined;
+      gradientColors = [const Color(0xFF3B82F6), const Color(0xFF1D4ED8)];
+    } else {
+      roleIcon = Icons.person_outline;
+      gradientColors = [const Color(0xFF10B981), const Color(0xFF059669)];
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: gradientColors[0].withOpacity(0.3),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(roleIcon, color: Colors.white, size: 12),
+          const SizedBox(width: 4),
+          Text(
+            roleStr.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTopNavigation() {
     final List<Widget> tabs = [_buildTopTab('My Space', 0)];
     if (AppSession().hasPermission('team')) {
@@ -921,11 +1011,16 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
             ? Row(
                 children: [
                   _buildSubTab('Dashboard', 0),
-                  if (AppSession().hasPermission('approvals')) _buildSubTab('Approvals', 1),
-                  if (AppSession().hasPermission('dashboard-leave')) _buildSubTab('Leave', 2),
-                  if (AppSession().hasPermission('announcements')) _buildSubTab('Announcements', 3),
-                  if (AppSession().hasPermission('calendar')) _buildSubTab('Calendar', 4),
-                  if (AppSession().hasPermission('tasks')) _buildSubTab('Tasks', 5),
+                  if (AppSession().hasPermission('approvals'))
+                    _buildSubTab('Approvals', 1),
+                  if (AppSession().hasPermission('dashboard-leave'))
+                    _buildSubTab('Leave', 2),
+                  if (AppSession().hasPermission('announcements'))
+                    _buildSubTab('Announcements', 3),
+                  if (AppSession().hasPermission('calendar'))
+                    _buildSubTab('Calendar', 4),
+                  if (AppSession().hasPermission('tasks'))
+                    _buildSubTab('Tasks', 5),
                 ],
               )
             : _selectedMainTab == 1
@@ -933,9 +1028,12 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                     children: [
                       _buildSubTab('Members', 0),
                       _buildSubTab('Feed', 1),
-                      if (AppSession().hasPermission('announcements')) _buildSubTab('Announcements', 2),
-                      if (AppSession().hasPermission('tasks')) _buildSubTab('Task', 3),
-                      if (AppSession().hasPermission('organization')) _buildSubTab('Department', 4),
+                      if (AppSession().hasPermission('announcements'))
+                        _buildSubTab('Announcements', 2),
+                      if (AppSession().hasPermission('tasks'))
+                        _buildSubTab('Task', 3),
+                      if (AppSession().hasPermission('organization'))
+                        _buildSubTab('Department', 4),
                     ],
                   )
                 : _selectedMainTab == 2
@@ -943,8 +1041,10 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                         children: [
                           _buildSubTab('Overview', 0),
                           _buildSubTab('Policies', 1),
-                          if (AppSession().hasPermission('announcements')) _buildSubTab('Announcements', 2),
-                          if (AppSession().hasPermission('reports')) _buildSubTab('Reports', 3),
+                          if (AppSession().hasPermission('announcements'))
+                            _buildSubTab('Announcements', 2),
+                          if (AppSession().hasPermission('reports'))
+                            _buildSubTab('Reports', 3),
                         ],
                       )
                     : const SizedBox(),
@@ -1028,7 +1128,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                         .toString()
                         .toLowerCase();
 
-                    if (doc.reference.parent.id == 'attendance_corrections')
+                    if (doc.reference.parent.id == 'attendance_issues')
                       type = 'attendance';
                     if (doc.reference.parent.id == 'shift_requests')
                       type = 'shift';
@@ -1057,13 +1157,19 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
 
                   final pendingDocs = filteredDocs.where((d) {
                     final data = d.data() as Map<String, dynamic>? ?? {};
-                    final status = (data['status'] ?? 'pending').toString().trim().toLowerCase();
+                    final status = (data['status'] ?? 'pending')
+                        .toString()
+                        .trim()
+                        .toLowerCase();
                     return status == 'pending';
                   }).toList();
 
                   final processedDocs = filteredDocs.where((d) {
                     final data = d.data() as Map<String, dynamic>? ?? {};
-                    final status = (data['status'] ?? 'pending').toString().trim().toLowerCase();
+                    final status = (data['status'] ?? 'pending')
+                        .toString()
+                        .trim()
+                        .toLowerCase();
                     return status == 'approved' || status == 'rejected';
                   }).toList();
 
@@ -1113,7 +1219,8 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     );
   }
 
-  Map<String, String> _resolveEmployeeInfo(DocumentSnapshot doc, Map<String, dynamic> data) {
+  Map<String, String> _resolveEmployeeInfo(
+      DocumentSnapshot doc, Map<String, dynamic> data) {
     String? name = (data['applicantName'] ??
             data['employee'] ??
             data['userName'] ??
@@ -1153,18 +1260,34 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     if (identifier.isNotEmpty && _empMap.containsKey(identifier)) {
       final empData = _empMap[identifier]!;
       if (name == null || name.isEmpty || name == 'Employee') {
-        name = (empData['name'] ?? empData['fullName'] ?? empData['userName'] ?? empData['empName'])?.toString();
+        name = (empData['name'] ??
+                empData['fullName'] ??
+                empData['userName'] ??
+                empData['empName'])
+            ?.toString();
       }
       if (dept == null || dept.isEmpty || dept == 'Department') {
-        dept = (empData['department'] ?? empData['dept'] ?? empData['empDept'] ?? empData['role'])?.toString();
+        dept = (empData['department'] ??
+                empData['dept'] ??
+                empData['empDept'] ??
+                empData['role'])
+            ?.toString();
       }
     }
 
     if (name == null || name.trim().isEmpty || name == 'Employee') {
       if (identifier.contains('@')) {
         final prefix = identifier.split('@').first;
-        final words = prefix.replaceAll('.', ' ').replaceAll('_', ' ').replaceAll('-', ' ').split(' ');
-        name = words.map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}' : '').join(' ');
+        final words = prefix
+            .replaceAll('.', ' ')
+            .replaceAll('_', ' ')
+            .replaceAll('-', ' ')
+            .split(' ');
+        name = words
+            .map((w) => w.isNotEmpty
+                ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}'
+                : '')
+            .join(' ');
       } else if (identifier.isNotEmpty) {
         name = identifier;
       } else {
@@ -1199,7 +1322,8 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     Color avatarColor = const Color(0xFF6B7280);
 
     if (colName == 'leave_requests') {
-      final rawType = (data['leaveType'] ?? data['type'] ?? 'leave').toString().trim();
+      final rawType =
+          (data['leaveType'] ?? data['type'] ?? 'leave').toString().trim();
       final lowerType = rawType.toLowerCase();
       final isWfh = lowerType == 'wfh' ||
           lowerType == 'work from home' ||
@@ -1229,16 +1353,16 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
           ? 'WFH'
           : (rawType.isEmpty
               ? 'Leave'
-              : (rawType[0].toUpperCase() + rawType.substring(1).toLowerCase()));
-      avatarColor =
-          isWfh ? const Color(0xFF2563EB) : const Color(0xFF10B981);
+              : (rawType[0].toUpperCase() +
+                  rawType.substring(1).toLowerCase()));
+      avatarColor = isWfh ? const Color(0xFF2563EB) : const Color(0xFF10B981);
       tagColor = isWfh ? const Color(0xFF2563EB) : const Color(0xFF10B981);
-      tagBgColor =
-          isWfh ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5);
-    } else if (colName == 'attendance_corrections') {
+      tagBgColor = isWfh ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5);
+    } else if (colName == 'attendance_issues') {
       title = 'Attendance Correction';
 
-      final attVal = data['attendanceDate'] ?? data['requestedDate'] ?? data['date'];
+      final attVal =
+          data['attendanceDate'] ?? data['requestedDate'] ?? data['date'];
       final attDt = parseApprovalDate(attVal);
       final aDate = attDt != null
           ? DateFormat('MMM d, yyyy').format(attDt)
@@ -1281,13 +1405,14 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     final empName = empInfo['name'] ?? 'Employee';
     final empDept = empInfo['dept'] ?? 'Department';
     final initials = _getInitials(empName);
-    final rawStatus = (data['status'] ?? 'pending').toString().trim().toLowerCase();
+    final rawStatus =
+        (data['status'] ?? 'pending').toString().trim().toLowerCase();
     final status = rawStatus.isEmpty ? 'pending' : rawStatus;
 
-    final createdDt = parseApprovalDate(data['createdAt'] ?? data['requestDate'] ?? data['applied']);
-    final dateStr = createdDt != null
-        ? DateFormat('MMM d').format(createdDt)
-        : 'Recent';
+    final createdDt = parseApprovalDate(
+        data['createdAt'] ?? data['requestDate'] ?? data['applied']);
+    final dateStr =
+        createdDt != null ? DateFormat('MMM d').format(createdDt) : 'Recent';
     final subtitle = '$empDept · Applied $dateStr';
 
     Map<String, dynamic> detailData = {
@@ -1548,6 +1673,15 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
       statusTextColor = const Color(0xFFB91C1C);
     }
 
+    bool canApprove = true;
+    if (type == 'Attendance' &&
+        !AppSession().hasPermission('approve-attendance')) {
+      canApprove = false;
+    } else if ((type == 'Leave' || type == 'WFH') &&
+        !AppSession().hasPermission('approve-leave')) {
+      canApprove = false;
+    }
+
     return Container(
       color: const Color(0xFFF8FAFC),
       child: Column(
@@ -1687,54 +1821,49 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                         const SizedBox(height: 20),
                         _buildDetailRow('Type', type),
                         const Divider(
-                            height: 32,
-                            thickness: 1,
-                            color: Color(0xFFF1F5F9)),
+                            height: 32, thickness: 1, color: Color(0xFFF1F5F9)),
                         _buildDetailRow('Title', title),
                         const Divider(
-                            height: 32,
-                            thickness: 1,
-                            color: Color(0xFFF1F5F9)),
+                            height: 32, thickness: 1, color: Color(0xFFF1F5F9)),
                         _buildDetailRow('Details', details),
                         const Divider(
-                            height: 32,
-                            thickness: 1,
-                            color: Color(0xFFF1F5F9)),
+                            height: 32, thickness: 1, color: Color(0xFFF1F5F9)),
                         _buildDetailRow('Applied On', appliedStr),
                         const Divider(
-                            height: 32,
-                            thickness: 1,
-                            color: Color(0xFFF1F5F9)),
+                            height: 32, thickness: 1, color: Color(0xFFF1F5F9)),
                         _buildDetailRow('Status', status),
                       ],
                     ),
                   ),
                   if (status.toLowerCase() == 'pending') ...[
-                    const SizedBox(height: 24),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFECFDF5),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                  color: const Color(0xFF86EFAC), width: 1.5),
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
+                    if (canApprove) ...[
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFECFDF5),
                                 borderRadius: BorderRadius.circular(16),
-                                onTap: () => _updateApprovalStatus('approved'),
-                                child: const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 16),
-                                  child: Center(
-                                    child: Text(
-                                      'Approve',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color: Color(0xFF047857),
+                                border: Border.all(
+                                    color: const Color(0xFF86EFAC), width: 1.5),
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  onTap: () =>
+                                      _updateApprovalStatus('approved'),
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 16),
+                                    child: Center(
+                                      child: Text(
+                                        'Approve',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF047857),
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -1742,30 +1871,31 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF2F2),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                  color: const Color(0xFFFCA5A5), width: 1.5),
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF2F2),
                                 borderRadius: BorderRadius.circular(16),
-                                onTap: () => _updateApprovalStatus('rejected'),
-                                child: const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 16),
-                                  child: Center(
-                                    child: Text(
-                                      'Reject',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color: Color(0xFFB91C1C),
+                                border: Border.all(
+                                    color: const Color(0xFFFCA5A5), width: 1.5),
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  onTap: () =>
+                                      _updateApprovalStatus('rejected'),
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 16),
+                                    child: Center(
+                                      child: Text(
+                                        'Reject',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFFB91C1C),
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -1773,9 +1903,32 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                               ),
                             ),
                           ),
+                        ],
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3F4F6),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ],
-                    ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.lock,
+                                size: 16, color: Color(0xFF6B7280)),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'You do not have permission to approve this request.',
+                                style: TextStyle(
+                                    fontSize: 12, color: Color(0xFF6B7280)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                   const SizedBox(height: 20),
                 ],
@@ -1825,6 +1978,15 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
 
     try {
       await _selectedApprovalRef!.update({'status': status});
+      if (status == 'approved' &&
+          _selectedApprovalRef!.parent.id == 'attendance_issues' &&
+          _selectedApprovalData != null) {
+        final docData =
+            (_selectedApprovalData!['docData'] as Map<String, dynamic>?) ??
+                _selectedApprovalData!;
+        await FirestoreService.applyAttendanceCorrectionApproval(
+            requestData: docData);
+      }
       setState(() => _selectedApprovalData = null);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -2159,130 +2321,229 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'MONTHLY ATTENDANCE – ${DateFormat('MMMM yyyy').format(DateTime.now()).toUpperCase()}',
-            style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF6B7280),
-                letterSpacing: 0.5),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  'MONTHLY ATTENDANCE – ${DateFormat('MMMM yyyy').format(DateTime.now()).toUpperCase()}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF374151),
+                    letterSpacing: 0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'REALTIME',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF5C5CFF),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Row(
             children: [
               _buildLegendItem(
-                  const Color(0xFF1D4ED8), '≥9 hrs'), // Dark Blue
-              const SizedBox(width: 16),
+                  const Color(0xFF5C5CFF), '≥9 hrs'), // Indigo/Blue
+              const SizedBox(width: 14),
               _buildLegendItem(
                   const Color(0xFFF59E0B), 'Late (<9 hrs)'), // Orange
-              const SizedBox(width: 16),
-              _buildLegendItem(const Color(0xFF93C5FD), 'Leave'), // Light Blue
+              const SizedBox(width: 14),
+              _buildLegendItem(const Color(0xFF10B981), 'Leave'), // Mint Green
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           SizedBox(
-            height: 120,
+            height: 140,
             child: StreamBuilder<QuerySnapshot>(
-              stream: _myAttendanceStream,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return const Center(child: Text('Error loading chart', style: TextStyle(fontSize: 10, color: Colors.red)));
-                }
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final now = DateTime.now();
-                final currentYear = now.year;
-                final currentMonth = now.month;
-
-                // Filter locally by current year and month
-                final docs = snapshot.data?.docs.where((doc) {
-                  final parts = doc.id.split('-');
-                  if (parts.length == 3) {
-                    return int.tryParse(parts[0]) == currentYear && int.tryParse(parts[1]) == currentMonth;
+                stream: _myAttendanceStream,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const Center(
+                        child: Text('Error loading chart',
+                            style: TextStyle(fontSize: 10, color: Colors.red)));
                   }
-                  return false;
-                }).toList() ?? [];
-
-                final Map<int, double> hoursByDay = {};
-                for (var doc in docs) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final dateStr = doc.id; // 'yyyy-MM-dd'
-                  try {
-                    final day = int.parse(dateStr.split('-')[2]);
-                    final totalHours = (data['totalHours'] ?? 0).toDouble();
-                    hoursByDay[day] = totalHours;
-                  } catch (e) {}
-                }
-
-                final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
-                final List<BarChartGroupData> barGroups = [];
-
-                for (int i = 1; i <= daysInMonth; i++) {
-                  final hours = hoursByDay[i] ?? 0.0;
-                  Color color = Colors.transparent;
-                  if (hours >= 9.0) {
-                    color = const Color(0xFF1D4ED8);
-                  } else if (hours > 0) {
-                    color = const Color(0xFFF59E0B);
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
                   }
-                  barGroups.add(_makeBarGroup(i - 1, hours > 10 ? 10 : hours, color));
-                }
 
-                return BarChart(
-                  BarChartData(
-                    alignment: BarChartAlignment.spaceAround,
-                    maxY: 10,
-                    barTouchData: BarTouchData(enabled: false),
-                    titlesData: FlTitlesData(
-                      show: true,
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          getTitlesWidget: (double value, TitleMeta meta) {
-                            final day = value.toInt() + 1;
-                            if (day % 5 != 1 && day != daysInMonth) return const SizedBox.shrink(); // Show 1, 6, 11...
-                            return SideTitleWidget(
+                  final now = DateTime.now();
+                  final currentYear = now.year;
+                  final currentMonth = now.month;
+
+                  // Filter locally by current year and month
+                  final docs = snapshot.data?.docs.where((doc) {
+                        final parts = doc.id.split('-');
+                        if (parts.length == 3) {
+                          return int.tryParse(parts[0]) == currentYear &&
+                              int.tryParse(parts[1]) == currentMonth;
+                        }
+                        return false;
+                      }).toList() ??
+                      [];
+
+                  final Map<int, double> hoursByDay = {};
+                  final Map<int, String> statusByDay = {};
+                  for (var doc in docs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final dateStr = doc.id; // 'yyyy-MM-dd'
+                    try {
+                      final day = int.parse(dateStr.split('-')[2]);
+                      double totalHours = 0.0;
+                      if (data['totalHours'] != null) {
+                        totalHours = (data['totalHours'] as num).toDouble();
+                      } else if (data['checkIn'] != null &&
+                          data['checkOut'] != null) {
+                        final cin = (data['checkIn'] as Timestamp).toDate();
+                        final cout = (data['checkOut'] as Timestamp).toDate();
+                        totalHours = cout.difference(cin).inMinutes / 60.0;
+                      } else if (data['checkIn'] != null) {
+                        final cin = (data['checkIn'] as Timestamp).toDate();
+                        totalHours =
+                            DateTime.now().difference(cin).inMinutes / 60.0;
+                      }
+                      hoursByDay[day] = totalHours;
+                      if (data['status'] != null) {
+                        statusByDay[day] =
+                            data['status'].toString().toLowerCase();
+                      }
+                    } catch (e) {}
+                  }
+
+                  final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+                  final List<BarChartGroupData> barGroups = [];
+
+                  for (int i = 1; i <= daysInMonth; i++) {
+                    final hours = hoursByDay[i] ?? 0.0;
+                    final st = statusByDay[i] ?? '';
+                    Color color = const Color(0xFFF3F4F6);
+                    double displayVal = hours > 10 ? 10 : hours;
+
+                    if (st == 'leave' ||
+                        st == 'on_leave' ||
+                        st == 'onleave' ||
+                        st == 'absent') {
+                      color = const Color(0xFF10B981);
+                      if (displayVal == 0) displayVal = 9.0;
+                    } else if (hours >= 9.0) {
+                      color = const Color(0xFF5C5CFF);
+                    } else if (hours > 0) {
+                      color = const Color(0xFFF59E0B);
+                    }
+                    barGroups.add(_makeBarGroup(i - 1, displayVal, color));
+                  }
+
+                  return BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround,
+                      maxY: 10,
+                      barTouchData: BarTouchData(
+                        enabled: true,
+                        touchTooltipData: BarTouchTooltipData(
+                          getTooltipColor: (_) => const Color(0xFF111827),
+                          tooltipRoundedRadius: 8,
+                          tooltipPadding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                            final day = group.x + 1;
+                            final hrs = rod.toY;
+                            return BarTooltipItem(
+                              'Day $day\n${hrs > 0 ? hrs.toStringAsFixed(1) : "0"} hrs',
+                              const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      titlesData: FlTitlesData(
+                        show: true,
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (double value, TitleMeta meta) {
+                              final day = value.toInt() + 1;
+                              if (day != 1 &&
+                                  day != 5 &&
+                                  day != 10 &&
+                                  day != 15 &&
+                                  day != 20 &&
+                                  day != 25 &&
+                                  day != daysInMonth) {
+                                return const SizedBox.shrink();
+                              }
+                              return SideTitleWidget(
                                 axisSide: meta.axisSide,
-                                child: Text(day.toString(), style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 10)));
-                          },
+                                child: Text(
+                                  day.toString(),
+                                  style: const TextStyle(
+                                    color: Color(0xFF9CA3AF),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 20,
-                          interval: 3,
-                          getTitlesWidget: (value, meta) {
-                            return Text(value.toInt().toString(),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 22,
+                            interval: 3,
+                            getTitlesWidget: (value, meta) {
+                              return Text(
+                                '${value.toInt()}h',
                                 style: const TextStyle(
-                                    color: Color(0xFF9CA3AF), fontSize: 10));
-                          },
+                                  color: Color(0xFF9CA3AF),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              );
+                            },
+                          ),
                         ),
+                        topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
                       ),
-                      topTitles:
-                          AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles:
-                          AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    ),
-                    gridData: FlGridData(
-                      show: true,
-                      checkToShowHorizontalLine: (value) => value % 3 == 0,
-                      getDrawingHorizontalLine: (value) => FlLine(
+                      gridData: FlGridData(
+                        show: true,
+                        checkToShowHorizontalLine: (value) => value % 3 == 0,
+                        getDrawingHorizontalLine: (value) => FlLine(
                           color: const Color(0xFFF3F4F6),
                           strokeWidth: 1,
-                          dashArray: [4, 4]),
-                      drawVerticalLine: false,
+                          dashArray: [4, 4],
+                        ),
+                        drawVerticalLine: false,
+                      ),
+                      borderData: FlBorderData(show: false),
+                      barGroups: barGroups.isEmpty
+                          ? [_makeBarGroup(0, 0, const Color(0xFFF3F4F6))]
+                          : barGroups,
                     ),
-                    borderData: FlBorderData(show: false),
-                    barGroups: barGroups.isEmpty 
-                        ? [_makeBarGroup(0, 0, Colors.transparent)] 
-                        : barGroups,
-                  ),
-                );
-              }
-            ),
+                  );
+                }),
           ),
         ],
       ),
@@ -2589,7 +2850,8 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _allTasksStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
           return _buildCardContainer(
             child: const Center(
                 child: Padding(
@@ -2600,18 +2862,56 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         }
 
         final allDocs = snapshot.data?.docs ?? [];
-        final userEmail = (user?.email ?? AppSession().email ?? FirebaseAuth.instance.currentUser?.email ?? '').trim().toLowerCase();
-        
+        final userEmail = (user?.email ??
+                AppSession().email ??
+                FirebaseAuth.instance.currentUser?.email ??
+                '')
+            .trim()
+            .toLowerCase();
+        final userName = (user?.displayName ??
+                AppSession().userName ??
+                FirebaseAuth.instance.currentUser?.displayName ??
+                '')
+            .trim()
+            .toLowerCase();
+
         final activeDocs = allDocs.where((d) {
           final data = d.data() as Map<String, dynamic>;
           final s = (data['status'] as String? ?? 'assigned').toLowerCase();
-          
-          final assignedTo = (data['assignedTo'] ?? data['assignedToEmail'] ?? data['userEmail'] ?? data['email'] ?? '').toString().trim().toLowerCase();
-          
-          bool isMine = AppSession().isSuperAdmin || (userEmail.isNotEmpty && (assignedTo == userEmail || assignedTo.contains(userEmail) || userEmail.contains(assignedTo)));
+
+          final assignedTo = (data['assignedTo'] ??
+                  data['assignedToEmail'] ??
+                  data['assigneeEmail'] ??
+                  data['assignee'] ??
+                  data['userEmail'] ??
+                  data['email'] ??
+                  '')
+              .toString()
+              .trim()
+              .toLowerCase();
+
+          bool isMine = false;
+          if (userEmail.isNotEmpty && assignedTo.isNotEmpty) {
+            if (assignedTo == userEmail ||
+                assignedTo.contains(userEmail) ||
+                userEmail.contains(assignedTo)) {
+              isMine = true;
+            }
+          }
+          if (!isMine && userName.isNotEmpty && assignedTo.isNotEmpty) {
+            if (assignedTo == userName ||
+                assignedTo.contains(userName) ||
+                userName.contains(assignedTo)) {
+              isMine = true;
+            }
+          }
+
           if (!isMine) return false;
-          
-          return s == 'assigned' || s == 'todo' || s == 'in_progress' || s == 'overdue' || s == 'pending';
+          return s == 'assigned' ||
+              s == 'todo' ||
+              s == 'in_progress' ||
+              s == 'overdue' ||
+              s == 'pending';
         }).toList();
 
         // Show most recent 4
@@ -2646,7 +2946,8 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData)
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData)
                 const Center(
                     child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
@@ -2791,7 +3092,8 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _employeesStream,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
           return _buildCardContainer(
             child: const Center(
               child: Padding(
@@ -2943,7 +3245,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: _recentActivityStream,
       builder: (context, snapshot) {
-        final items = snapshot.data ?? [];
+        final items = (snapshot.data ?? []).take(3).toList();
         return _buildCardContainer(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2955,7 +3257,8 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                       color: Color(0xFF6B7280),
                       letterSpacing: 0.5)),
               const SizedBox(height: 16),
-              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData)
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData)
                 const Center(
                     child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
@@ -3024,7 +3327,308 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     );
   }
 
-  Widget _buildBottomNav() {
+  void _triggerOptionAction(int index, bool isCheckedIn) async {
+    if (index == 0) {
+      // Quick Check-In / Check-Out
+      setState(() {
+        _bottomNavIndex = 1;
+      });
+      await _handleCheckInOut('present', !isCheckedIn);
+    } else if (index == 1) {
+      // Apply Leave
+      setState(() {
+        _bottomNavIndex = 2;
+      });
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ApplyLeaveScreen()),
+        );
+      }
+    } else if (index == 2) {
+      // Raise Correction
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const RequestCorrectionForm()),
+        );
+      }
+    }
+  }
+
+  Widget _buildSpeedDialOverlay(bool isCheckedIn) {
+    if (!_isSpeedDialOpen) return const SizedBox.shrink();
+
+    final checkInLabel = isCheckedIn ? 'Quick Check-Out' : 'Quick Check-In';
+
+    final isHovered0 = _hoveredOptionIndex == 0;
+    final isHovered1 = _hoveredOptionIndex == 1;
+    final isHovered2 = _hoveredOptionIndex == 2;
+
+    return Stack(
+      children: [
+        // 1. Semi-transparent backdrop overlay to dismiss when tapped outside or swiped
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: () => setState(() {
+              _isSpeedDialOpen = false;
+              _hoveredOptionIndex = null;
+            }),
+            onVerticalDragEnd: (_) => setState(() {
+              _isSpeedDialOpen = false;
+              _hoveredOptionIndex = null;
+            }),
+            onHorizontalDragEnd: (_) => setState(() {
+              _isSpeedDialOpen = false;
+              _hoveredOptionIndex = null;
+            }),
+            child: Container(
+              color: Colors.black.withOpacity(0.45),
+            ),
+          ),
+        ),
+
+        // 2. Speed-dial action items positioned above bottom navigation bar
+        Positioned(
+          bottom: 24,
+          left: 0,
+          right: 0,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // --- Top Action: Quick Check-In / Check-Out ---
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isSpeedDialOpen = false;
+                    _hoveredOptionIndex = null;
+                  });
+                  _triggerOptionAction(0, isCheckedIn);
+                },
+                child: AnimatedScale(
+                  scale: isHovered0 ? 1.15 : 1.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 54,
+                        height: 54,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEEF2FF),
+                          shape: BoxShape.circle,
+                          border: isHovered0
+                              ? Border.all(
+                                  color: const Color(0xFF5C5CFF), width: 3)
+                              : null,
+                          boxShadow: [
+                            BoxShadow(
+                              color: isHovered0
+                                  ? const Color(0xFF5C5CFF).withOpacity(0.5)
+                                  : Colors.black.withOpacity(0.25),
+                              blurRadius: isHovered0 ? 14 : 10,
+                              offset: const Offset(0, 4),
+                            )
+                          ],
+                        ),
+                        child: Icon(
+                          isCheckedIn
+                              ? Icons.logout_rounded
+                              : Icons.access_time_rounded,
+                          color: const Color(0xFF5C5CFF),
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isHovered0
+                              ? const Color(0xFF5C5CFF)
+                              : const Color(0xFF111827),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.25),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            )
+                          ],
+                        ),
+                        child: Text(
+                          checkInLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              // --- Row of Bottom-Left (Apply Leave) & Bottom-Right (Raise Correction) ---
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Bottom Left: Apply Leave
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _isSpeedDialOpen = false;
+                        _hoveredOptionIndex = null;
+                      });
+                      _triggerOptionAction(1, isCheckedIn);
+                    },
+                    child: AnimatedScale(
+                      scale: isHovered1 ? 1.15 : 1.0,
+                      duration: const Duration(milliseconds: 150),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFECFDF5),
+                              shape: BoxShape.circle,
+                              border: isHovered1
+                                  ? Border.all(
+                                      color: const Color(0xFF10B981), width: 3)
+                                  : null,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: isHovered1
+                                      ? const Color(0xFF10B981).withOpacity(0.5)
+                                      : Colors.black.withOpacity(0.25),
+                                  blurRadius: isHovered1 ? 14 : 10,
+                                  offset: const Offset(0, 4),
+                                )
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.calendar_today_rounded,
+                              color: Color(0xFF10B981),
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isHovered1
+                                  ? const Color(0xFF10B981)
+                                  : const Color(0xFF111827),
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.25),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                )
+                              ],
+                            ),
+                            child: const Text(
+                              'Apply Leave',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 24),
+
+                  // Bottom Right: Raise Correction
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _isSpeedDialOpen = false;
+                        _hoveredOptionIndex = null;
+                      });
+                      _triggerOptionAction(2, isCheckedIn);
+                    },
+                    child: AnimatedScale(
+                      scale: isHovered2 ? 1.15 : 1.0,
+                      duration: const Duration(milliseconds: 150),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 54,
+                            height: 54,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFFBEB),
+                              shape: BoxShape.circle,
+                              border: isHovered2
+                                  ? Border.all(
+                                      color: const Color(0xFFF59E0B), width: 3)
+                                  : null,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: isHovered2
+                                      ? const Color(0xFFF59E0B).withOpacity(0.5)
+                                      : Colors.black.withOpacity(0.25),
+                                  blurRadius: isHovered2 ? 14 : 10,
+                                  offset: const Offset(0, 4),
+                                )
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.error_outline_rounded,
+                              color: Color(0xFFF59E0B),
+                              size: 26,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isHovered2
+                                  ? const Color(0xFFF59E0B)
+                                  : const Color(0xFF111827),
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.25),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                )
+                              ],
+                            ),
+                            child: const Text(
+                              'Raise Correction',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBottomNav(bool isCheckedIn) {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -3042,29 +3646,87 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
               _navItem(0, Icons.home_outlined, Icons.home_filled, 'Home'),
               _navItem(
                   1, Icons.access_time, Icons.access_time_filled, 'Attendance'),
-              
-              if (AppSession().hasPermission('create-announcement') || AppSession().hasPermission('create-task'))
-                GestureDetector(
-                  onTap: () => setState(() => _isCreatingAnnouncement = true),
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF5C5CFF),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                            color: Color(0x405C5CFF),
-                            blurRadius: 12,
-                            offset: Offset(0, 4))
-                      ],
-                    ),
-                    child: const Icon(Icons.add, color: Colors.white, size: 28),
-                  ),
-                )
-              else 
-                const SizedBox(width: 48),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isSpeedDialOpen = !_isSpeedDialOpen;
+                    _hoveredOptionIndex = null;
+                  });
+                },
+                onLongPressStart: (details) {
+                  setState(() {
+                    _isSpeedDialOpen = true;
+                    _dragStartPos = details.globalPosition;
+                    _hoveredOptionIndex = null;
+                  });
+                },
+                onLongPressMoveUpdate: (details) {
+                  final offset = details.globalPosition - _dragStartPos;
+                  final dx = offset.dx;
+                  final dy = offset.dy;
 
+                  int? newHover;
+                  if (dy < -50 && dx.abs() < 45) {
+                    newHover = 0; // Top: Quick Check-In / Check-Out
+                  } else if (dy < -15 && dx < -20) {
+                    newHover = 1; // Left: Apply Leave
+                  } else if (dy < -15 && dx > 20) {
+                    newHover = 2; // Right: Raise Correction
+                  }
+
+                  if (newHover != _hoveredOptionIndex) {
+                    setState(() {
+                      _hoveredOptionIndex = newHover;
+                    });
+                  }
+                },
+                onLongPressEnd: (details) {
+                  if (_hoveredOptionIndex != null) {
+                    final opt = _hoveredOptionIndex!;
+                    setState(() {
+                      _isSpeedDialOpen = false;
+                      _hoveredOptionIndex = null;
+                    });
+                    _triggerOptionAction(opt, isCheckedIn);
+                  } else {
+                    setState(() {
+                      _hoveredOptionIndex = null;
+                    });
+                  }
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: _isSpeedDialOpen
+                        ? const Color(0xFF2B384A)
+                        : const Color(0xFF5C5CFF),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: (_isSpeedDialOpen
+                                ? const Color(0xFF2B384A)
+                                : const Color(0xFF5C5CFF))
+                            .withOpacity(0.4),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      )
+                    ],
+                  ),
+                  child: AnimatedRotation(
+                    turns: _isSpeedDialOpen ? 0.25 : 0.0,
+                    duration: const Duration(milliseconds: 250),
+                    child: Icon(
+                      _isSpeedDialOpen
+                          ? Icons.close_rounded
+                          : Icons.add_rounded,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                ),
+              ),
               _navItem(2, Icons.calendar_today_outlined, Icons.calendar_today,
                   'Leave'),
               _navItem(3, Icons.more_horiz, Icons.more_horiz, 'More'),
@@ -3122,10 +3784,12 @@ class _AdminApprovalReviewScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<_AdminApprovalReviewScreen> createState() => _AdminApprovalReviewScreenState();
+  State<_AdminApprovalReviewScreen> createState() =>
+      _AdminApprovalReviewScreenState();
 }
 
-class _AdminApprovalReviewScreenState extends State<_AdminApprovalReviewScreen> {
+class _AdminApprovalReviewScreenState
+    extends State<_AdminApprovalReviewScreen> {
   late Map<String, dynamic> data;
   bool _isLoading = false;
 
@@ -3142,11 +3806,21 @@ class _AdminApprovalReviewScreenState extends State<_AdminApprovalReviewScreen> 
         'status': status,
         'reviewedAt': FieldValue.serverTimestamp(),
       });
+      if (status == 'approved' &&
+          widget.docRef.parent.id == 'attendance_issues') {
+        final docSnap = await widget.docRef.get();
+        final docData = (docSnap.data() as Map<String, dynamic>?) ?? data;
+        await FirestoreService.applyAttendanceCorrectionApproval(
+            requestData: docData);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Request ${status == 'approved' ? 'approved' : 'rejected'} successfully'),
-            backgroundColor: status == 'approved' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+            content: Text(
+                'Request ${status == 'approved' ? 'approved' : 'rejected'} successfully'),
+            backgroundColor: status == 'approved'
+                ? const Color(0xFF10B981)
+                : const Color(0xFFEF4444),
           ),
         );
         Navigator.of(context).pop(); // Go back to Approvals list
@@ -3266,7 +3940,8 @@ class _AdminApprovalReviewScreenState extends State<_AdminApprovalReviewScreen> 
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         empName,
@@ -3464,4 +4139,3 @@ class _AdminApprovalReviewScreenState extends State<_AdminApprovalReviewScreen> 
     );
   }
 }
-

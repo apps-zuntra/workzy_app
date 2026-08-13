@@ -42,6 +42,8 @@ class _CalendarTabViewState extends State<CalendarTabView> {
   final Set<String> _activeFilters = {
     'my_leave',
     'holidays',
+    'events',
+    'attendance',
   };
   String? _selectedDepartment;
   String? _selectedBranch;
@@ -194,46 +196,36 @@ class _CalendarTabViewState extends State<CalendarTabView> {
         if (dept != _selectedDepartment!.toLowerCase().trim()) continue;
       }
 
-      final email = (data['userEmail'] ?? data['email'] ?? '').toString().toLowerCase().trim();
-      if (currentUserEmail.isNotEmpty && email != currentUserEmail) continue;
+      final docEmail = (data['userEmail'] ?? data['email'] ?? doc.reference.parent.parent?.id ?? '').toString().toLowerCase().trim();
+      if (currentUserEmail.isNotEmpty && docEmail.isNotEmpty && docEmail != currentUserEmail) continue;
 
-      final date = _parseDate(data['date'] ?? data['createdAt'] ?? doc.id);
+      final date = _parseDate(data['date'] ?? data['recordDate'] ?? data['createdAt'] ?? doc.id);
       if (date != null) {
-        final checkInStr = _formatTime(data['checkIn'] ?? data['checkInTime']);
-        final checkOutStr = _formatTime(data['checkOut'] ?? data['checkOutTime']);
-        final hoursStr = _calculateHours(data['checkIn'] ?? data['checkInTime'], data['checkOut'] ?? data['checkOutTime']);
-        final isLate = data['isLate'] == true || (data['status'] ?? '').toString().toLowerCase() == 'late';
+        final checkInVal = data['checkIn'] ?? data['checkInTime'] ?? data['lastCheckIn'];
+        final checkOutVal = data['checkOut'] ?? data['checkOutTime'] ?? data['lastCheckout'];
+        final checkInStr = _formatTime(checkInVal);
+        final checkOutStr = _formatTime(checkOutVal);
+        final hoursStr = _calculateHours(checkInVal, checkOutVal);
+        final statusRaw = (data['status'] ?? data['attendanceStatus'] ?? '').toString().toLowerCase();
+        final isLate = data['isLate'] == true || statusRaw.contains('late');
+        final isWfh = (data['workMode'] ?? '').toString().toLowerCase().contains('wfh');
 
-        // We show attendance as "Events" if chosen, or under My Leave/Team Leave matching status
-        if (isLate && _activeFilters.contains('events')) {
-          addEvent(
-            date,
-            CalendarEvent(
-              title: 'Late check-in',
-              type: 'events',
-              date: date,
-              status: 'Late',
-              checkIn: checkInStr,
-              checkOut: checkOutStr,
-              hours: hoursStr,
-              notes: 'Late check-in (grace period exceeded)',
-            ),
-          );
-        } else if (_activeFilters.contains('events')) {
-          addEvent(
-            date,
-            CalendarEvent(
-              title: 'Present',
-              type: 'events',
-              date: date,
-              status: 'On Time',
-              checkIn: checkInStr,
-              checkOut: checkOutStr,
-              hours: hoursStr,
-              notes: 'Regular attendance',
-            ),
-          );
-        }
+        final statusLabel = isWfh ? 'WFH' : (isLate ? 'Late' : 'Present');
+        final titleLabel = isWfh ? 'Work From Home' : (isLate ? 'Late Check-in' : 'Present');
+
+        addEvent(
+          date,
+          CalendarEvent(
+            title: titleLabel,
+            type: 'events',
+            date: date,
+            status: statusLabel,
+            checkIn: checkInStr,
+            checkOut: checkOutStr,
+            hours: hoursStr,
+            notes: (data['reason'] ?? 'Attendance Record').toString(),
+          ),
+        );
       }
     }
 

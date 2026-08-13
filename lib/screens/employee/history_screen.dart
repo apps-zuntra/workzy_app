@@ -146,12 +146,18 @@ class _TasksTabState extends State<_TasksTab> {
     final title = data['title'] ?? 'Task';
     final priority = data['priority'] ?? 'High';
     final assignedBy = data['assignedByName'] ?? 'Manager';
-    final progress = (data['progress'] ?? 65).toInt(); // Fallback to 65 for UI mock if missing
-    final dueDate = data['dueDate'] as Timestamp?;
+    final progress = (data['progress'] ?? 65).toInt();
+    DateTime? dueDate;
+    final rawDue = data['dueDate'] ?? data['due'];
+    if (rawDue is Timestamp) {
+      dueDate = rawDue.toDate();
+    } else if (rawDue is String) {
+      dueDate = DateTime.tryParse(rawDue);
+    }
     
     String timeLeft = '2h 30m left'; // Fallback
     if (dueDate != null) {
-      final diff = dueDate.toDate().difference(DateTime.now());
+      final diff = dueDate.difference(DateTime.now());
       if (diff.isNegative) {
         timeLeft = 'Overdue';
       } else if (diff.inDays > 0) {
@@ -245,8 +251,6 @@ class _RequestsTab extends StatefulWidget {
 }
 
 class _RequestsTabState extends State<_RequestsTab> {
-  String _selectedFilter = 'Attendance';
-  final List<String> _filters = ['Attendance', 'Leave', 'Work From Home'];
 
   Stream<List<Map<String, dynamic>>> _buildRequestsStream() {
     final email = FirebaseAuth.instance.currentUser?.email ?? '';
@@ -254,13 +258,11 @@ class _RequestsTabState extends State<_RequestsTab> {
     final correctionsStream = FirebaseFirestore.instance
         .collection('organizations')
         .doc(FirestoreService.companyId)
-        .collection('attendance_corrections')
+        .collection('attendance_issues')
         .where('userId', isEqualTo: email)
         .snapshots();
 
-    return correctionsStream.asyncMap((corrSnap) async {
-      final leaveSnap = await FirestoreService.userLeaveRequestsCol(email).get();
-
+    return correctionsStream.map((corrSnap) {
       final List<Map<String, dynamic>> items = [];
 
       for (final doc in corrSnap.docs) {
@@ -275,24 +277,16 @@ class _RequestsTabState extends State<_RequestsTab> {
         });
       }
 
-      for (final doc in leaveSnap.docs) {
-        final d = doc.data();
-        final lType = d['leaveType'] as String? ?? '';
-        final isWfh = lType.toLowerCase() == 'wfh';
-        
-        items.add({
-          'id': doc.id,
-          'type': isWfh ? 'Work From Home' : 'Leave Request',
-          'filterCategory': isWfh ? 'Work From Home' : 'Leave',
-          'status': d['status'] ?? 'pending',
-          'createdAt': d['createdAt'],
-          'approvedBy': d['approvedByName'] ?? '-',
-        });
+      DateTime? pDate(dynamic v) {
+        if (v is Timestamp) return v.toDate();
+        if (v is DateTime) return v;
+        if (v is String) return DateTime.tryParse(v);
+        return null;
       }
 
       items.sort((a, b) {
-        final ta = a['createdAt'] as Timestamp?;
-        final tb = b['createdAt'] as Timestamp?;
+        final ta = pDate(a['createdAt']);
+        final tb = pDate(b['createdAt']);
         if (ta == null && tb == null) return 0;
         if (ta == null) return 1;
         if (tb == null) return -1;
@@ -307,40 +301,6 @@ class _RequestsTabState extends State<_RequestsTab> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Chips
-        Container(
-          color: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _filters.map((f) {
-                final isSelected = f == _selectedFilter;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
-                    onTap: () => setState(() => _selectedFilter = f),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFF6366F1) : const Color(0xFFF3F4F6),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        f,
-                        style: TextStyle(
-                          color: isSelected ? Colors.white : const Color(0xFF4B5563),
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ),
         // List
         Expanded(
           child: StreamBuilder<List<Map<String, dynamic>>>(
@@ -351,7 +311,6 @@ class _RequestsTabState extends State<_RequestsTab> {
               }
               
               var items = snapshot.data ?? [];
-              items = items.where((item) => item['filterCategory'] == _selectedFilter).toList();
 
               if (items.isEmpty) {
                 return const Center(child: Text('No requests found.', style: TextStyle(color: Colors.grey)));
@@ -372,10 +331,13 @@ class _RequestsTabState extends State<_RequestsTab> {
   Widget _buildRequestCard(Map<String, dynamic> data) {
     final title = data['type'] ?? 'Request';
     final status = (data['status'] ?? 'pending').toString().toLowerCase();
-    final createdAt = data['createdAt'] as Timestamp?;
+    DateTime? createdAt;
+    final rawCr = data['createdAt'];
+    if (rawCr is Timestamp) createdAt = rawCr.toDate();
+    else if (rawCr is String) createdAt = DateTime.tryParse(rawCr);
     final approvedBy = data['approvedBy'] ?? '-';
     
-    final dateStr = createdAt != null ? DateFormat('MMM d').format(createdAt.toDate()) : '--';
+    final dateStr = createdAt != null ? DateFormat('MMM d').format(createdAt) : '--';
 
     Color bg; Color fg; String label;
     if (status == 'approved') {

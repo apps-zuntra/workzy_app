@@ -1,6 +1,7 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
+import 'package:attendance_app/screens/employee/task_detail_screen.dart';
 import 'package:intl/intl.dart';
 
 class EmployeeTasksDetailScreen extends StatefulWidget {
@@ -146,8 +147,8 @@ class _EmployeeTasksDetailScreenState extends State<EmployeeTasksDetailScreen> {
           
           if (ra != rb) return ra.compareTo(rb);
           
-          final tsA = (ad['dueDate'] as Timestamp?)?.toDate() ?? DateTime.now();
-          final tsB = (bd['dueDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+          final tsA = _parseDateTime(ad['dueDate'] ?? ad['due']) ?? DateTime.now();
+          final tsB = _parseDateTime(bd['dueDate'] ?? bd['due']) ?? DateTime.now();
           return tsA.compareTo(tsB);
         });
 
@@ -175,7 +176,20 @@ class _EmployeeTasksDetailScreenState extends State<EmployeeTasksDetailScreen> {
                         (context, index) {
                           final doc = filteredDocs[index];
                           final data = doc.data() as Map<String, dynamic>;
-                          return _buildTaskCard(data);
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => TaskDetailScreen(
+                                    taskId: doc.id,
+                                    initialTaskData: data,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: _buildTaskCard(data),
+                          );
                         },
                         childCount: filteredDocs.length,
                       ),
@@ -240,10 +254,25 @@ class _EmployeeTasksDetailScreenState extends State<EmployeeTasksDetailScreen> {
     );
   }
 
+  DateTime? _parseDateTime(dynamic val) {
+    if (val == null) return null;
+    if (val is Timestamp) return val.toDate();
+    if (val is DateTime) return val;
+    if (val is String) {
+      final s = val.trim();
+      if (s.isEmpty) return null;
+      final dt = DateTime.tryParse(s);
+      if (dt != null) return dt;
+      try { return DateFormat('MMM d, yyyy').parse(s); } catch (_) {}
+      try { return DateFormat('yyyy-MM-dd').parse(s); } catch (_) {}
+    }
+    return null;
+  }
+
   Widget _buildTaskCard(Map<String, dynamic> data) {
     final title = data['title'] ?? 'Untitled Task';
-    final ts = data['dueDate'] as Timestamp?;
-    final dateStr = ts != null ? DateFormat('MMM d').format(ts.toDate()) : 'No date';
+    final dt = _parseDateTime(data['dueDate'] ?? data['due']);
+    final dateStr = dt != null ? DateFormat('MMM d').format(dt) : (data['due']?.toString() ?? 'No date');
     final dbStatus = (data['status'] ?? 'assigned').toString().toLowerCase();
     
     String statusLabel = 'Assigned';

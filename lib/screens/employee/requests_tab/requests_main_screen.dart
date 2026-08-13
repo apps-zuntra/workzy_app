@@ -22,7 +22,7 @@ class _RequestsMainScreenState extends State<RequestsMainScreen> {
     final correctionsStream = FirebaseFirestore.instance
         .collection('organizations')
         .doc(FirestoreService.companyId)
-        .collection('attendance_corrections')
+        .collection('attendance_issues')
         .where('userId', isEqualTo: email)
         .snapshots();
     final leaveStream = FirestoreService.userLeaveRequestsCol(email).snapshots();
