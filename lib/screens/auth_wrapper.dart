@@ -329,12 +329,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         department: department,
       );
 
-      final loc = cd['location'] as Map<String, dynamic>?;
-      if (loc != null) {
-        AppSession().officeLat = parseDouble(loc['latitude']);
-        AppSession().officeLng = parseDouble(loc['longitude']);
-      }
-      AppSession().allowedRadius = parseDouble(cd['allowedRadius']) ?? 500;
+      AppSession().updateOfficeLocationFromMap(cd);
 
       NotificationService().onUserLogin();
 
@@ -368,6 +363,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
         department = memberDoc.data()!['department'] as String?;
       }
 
+      double? parseDouble(dynamic v) =>
+          v is num ? v.toDouble() : (v is String ? double.tryParse(v) : null);
+
       AppSession().populate(
         uid: user.uid,
         email: email,
@@ -379,22 +377,28 @@ class _AuthWrapperState extends State<AuthWrapper> {
         department: department,
       );
 
+      AppSession().updateOfficeLocationFromMap(od);
+
       NotificationService().onUserLogin();
 
       if (mounted) {
         setState(() { _sessionLoaded = true; _error = null; });
       }
 
-      // ── Set up real-time listener for permissions ──
+      // ── Set up real-time listener for permissions and location ──
       _orgSubscription?.cancel();
       _orgSubscription = orgDocRef.snapshots().listen((snapshot) {
         if (snapshot.exists && snapshot.data() != null) {
           final liveData = snapshot.data()!;
+          bool shouldRebuild = false;
           if (liveData.containsKey('featurePermissions')) {
             AppSession().featurePermissions = liveData['featurePermissions'] as Map<String, dynamic>;
-            if (mounted) {
-              setState(() {}); // Trigger rebuild of UnifiedDashboardScreen
-            }
+            shouldRebuild = true;
+          }
+          AppSession().updateOfficeLocationFromMap(liveData);
+          shouldRebuild = true;
+          if (shouldRebuild && mounted) {
+            setState(() {}); // Trigger rebuild
           }
         }
       });

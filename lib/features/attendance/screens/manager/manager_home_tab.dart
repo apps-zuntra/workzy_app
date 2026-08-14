@@ -72,6 +72,17 @@ class _ManagerHomeTabState extends State<ManagerHomeTab> {
   String _getAttendanceDocId() => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
   void _startLocationUpdates() {
+    if (AppSession().officeLat == null && AppSession().companyId != null) {
+      FirestoreService.companyDoc().get().then((doc) {
+        if (doc.exists && doc.data() != null && mounted) {
+          AppSession().updateOfficeLocationFromMap(doc.data());
+          setState(() {});
+        }
+      }).catchError((e) {
+        debugPrint('Failed to fetch office location in manager_home_tab: $e');
+      });
+    }
+
     LocationService().startRealtimeTracking();
     LocationService.getStream().listen((data) {
       if (mounted && data.position != null) {
@@ -538,6 +549,36 @@ class _ManagerHomeTabState extends State<ManagerHomeTab> {
   }
 
   Widget _buildOfficeLocationCard() {
+    final bool hasOfficeLoc = LocationService.officeLat != null && LocationService.officeLng != null;
+    
+    if (!hasOfficeLoc) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+        decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFF3F4F6))),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.location_off_rounded, color: Colors.grey, size: 40),
+            const SizedBox(height: 12),
+            const Text(
+              'Office Location Not Configured',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF111827)),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Please contact your HR Admin to set up the office location for attendance.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: const Color(0xFF111827).withValues(alpha: 0.6)),
+            ),
+          ],
+        ),
+      );
+    }
+
     final isInside = _currentLocationData?.isWithinRadius ?? false;
     return Container(
       decoration: BoxDecoration(
@@ -551,8 +592,8 @@ class _ManagerHomeTabState extends State<ManagerHomeTab> {
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(15)),
               child: LocationMapCard(
-                  officeLat: LocationService.officeLat,
-                  officeLng: LocationService.officeLng,
+                  officeLat: LocationService.officeLat!,
+                  officeLng: LocationService.officeLng!,
                   allowedRadius: LocationService.allowedRadius,
                   userLocation: _currentLocationData?.latLng,
                   userAddress: _currentLocationData?.address,
@@ -590,8 +631,8 @@ class _ManagerHomeTabState extends State<ManagerHomeTab> {
                   context,
                   MaterialPageRoute(
                       builder: (_) => FullMapScreen(
-                          officeLat: LocationService.officeLat,
-                          officeLng: LocationService.officeLng,
+                          officeLat: LocationService.officeLat!,
+                          officeLng: LocationService.officeLng!,
                           allowedRadius: LocationService.allowedRadius,
                           userLocation: _currentLocationData?.latLng,
                           userAddress: _currentLocationData?.address))),

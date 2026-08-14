@@ -89,6 +89,56 @@ class AppSession {
   bool get isReady =>
       uid != null && companyId != null && role != null;
 
+  /// Update office location from Firestore organization/company map
+  void updateOfficeLocationFromMap(Map<dynamic, dynamic>? data) {
+    if (data == null) return;
+    double? parseDouble(dynamic v) =>
+        v is num ? v.toDouble() : (v is String ? double.tryParse(v) : null);
+
+    double? foundLat;
+    double? foundLng;
+
+    // 1. Try 'locations' list (array of branch maps)
+    final locations = data['locations'];
+    if (locations is List && locations.isNotEmpty) {
+      for (final item in locations) {
+        if (item is Map) {
+          final lat = parseDouble(item['latitude'] ?? item['lat']);
+          final lng = parseDouble(item['longitude'] ?? item['lng']);
+          if (lat != null && lng != null) {
+            foundLat = lat;
+            foundLng = lng;
+            break;
+          }
+        }
+      }
+    }
+
+    // 2. Try 'location' object (singular map)
+    if (foundLat == null || foundLng == null) {
+      final loc = data['location'];
+      if (loc is Map) {
+        foundLat = parseDouble(loc['latitude'] ?? loc['lat']);
+        foundLng = parseDouble(loc['longitude'] ?? loc['lng']);
+      }
+    }
+
+    // 3. Try root-level fields: latitude / longitude or lat / lng
+    if (foundLat == null || foundLng == null) {
+      foundLat = parseDouble(data['latitude'] ?? data['lat']);
+      foundLng = parseDouble(data['longitude'] ?? data['lng']);
+    }
+
+    if (foundLat != null && foundLng != null) {
+      officeLat = foundLat;
+      officeLng = foundLng;
+    }
+
+    if (data.containsKey('allowedRadius')) {
+      allowedRadius = parseDouble(data['allowedRadius']) ?? 500;
+    }
+  }
+
   /// Populate the session after successful login + approved_users look-up.
   void populate({
     required String uid,
@@ -114,8 +164,8 @@ class AppSession {
     this.companyName = companyName;
     this.userName = userName;
     this.department = department;
-    this.officeLat = officeLat;
-    this.officeLng = officeLng;
+    if (officeLat != null) this.officeLat = officeLat;
+    if (officeLng != null) this.officeLng = officeLng;
     if (allowedRadius != null) this.allowedRadius = allowedRadius;
     if (shiftStartTime != null) this.shiftStartTime = shiftStartTime;
     if (shiftEndTime != null) this.shiftEndTime = shiftEndTime;

@@ -11,18 +11,11 @@ class LocationService {
   factory LocationService() => _instance;
   LocationService._internal();
 
-  // â”€â”€ Fallback office location constants (used only before session loads) â”€â”€
-  static const double _fallbackLat = 12.9571241;
-  static const double _fallbackLng = 80.2452581;
-  static const double _fallbackRadius = 500;
+  /// Dynamic office latitude â€” reads from AppSession.
+  static double? get officeLat => AppSession().officeLat;
 
-  /// Dynamic office latitude â€” reads from AppSession, falls back to constant.
-  static double get officeLat =>
-      AppSession().officeLat ?? _fallbackLat;
-
-  /// Dynamic office longitude â€” reads from AppSession, falls back to constant.
-  static double get officeLng =>
-      AppSession().officeLng ?? _fallbackLng;
+  /// Dynamic office longitude â€” reads from AppSession.
+  static double? get officeLng => AppSession().officeLng;
 
   /// Dynamic allowed radius in metres â€” reads from AppSession, falls back to constant.
   static double get allowedRadius =>
@@ -52,7 +45,7 @@ class LocationService {
   static const Duration _locationTimeout = Duration(seconds: 10);
 
   /// Max acceptable accuracy in meters. Positions worse than this (higher number) are rejected.
-  static const double _maxAcceptableAccuracy = 100.0;
+  static double get _maxAcceptableAccuracy => kIsWeb ? 2000.0 : 100.0;
 
   // Cached data
   Position? _cachedPosition;
@@ -294,12 +287,16 @@ class LocationService {
       }
 
       // Calculate distance from office
-      double distance = Geolocator.distanceBetween(
-        position.latitude,
-        position.longitude,
-        officeLat,
-        officeLng,
-      );
+      double distance = 0;
+      bool hasOfficeLoc = officeLat != null && officeLng != null;
+      if (hasOfficeLoc) {
+        distance = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          officeLat!,
+          officeLng!,
+        );
+      }
 
       // Fetch Address (Best Effort)
       String? address;
@@ -327,8 +324,9 @@ class LocationService {
           : position.accuracy <= 100
               ? "~GPS"
               : "Low Accuracy";
-      _cachedDistanceInfo =
-          "${distance.toInt()}m from Office ($accuracyLabel Â±${position.accuracy.toInt()}m)";
+      _cachedDistanceInfo = hasOfficeLoc
+          ? "${distance.toInt()}m from Office ($accuracyLabel Â±${position.accuracy.toInt()}m)"
+          : "Office Location Not Set";
       _cachedAddress = address;
 
       final result = LocationData(
@@ -481,12 +479,16 @@ class LocationService {
   /// Handle incoming position updates
   Future<void> _handlePositionUpdate(Position position) async {
     // Calculate distance
-    double distance = Geolocator.distanceBetween(
-      position.latitude,
-      position.longitude,
-      officeLat,
-      officeLng,
-    );
+    double distance = 0;
+    bool hasOfficeLoc = officeLat != null && officeLng != null;
+    if (hasOfficeLoc) {
+      distance = Geolocator.distanceBetween(
+        position.latitude,
+        position.longitude,
+        officeLat!,
+        officeLng!,
+      );
+    }
 
     // Throttled Address Fetching (every 30 seconds or if moved significantly)
     String? address = _cachedAddress;
@@ -521,7 +523,7 @@ class LocationService {
     // Update cache
     _cachedPosition = position;
     _lastFetchTime = DateTime.now();
-    _cachedDistanceInfo = "${distance.toInt()}m from Office";
+    _cachedDistanceInfo = hasOfficeLoc ? "${distance.toInt()}m from Office" : "Office Location Not Set";
     _cachedAddress = address;
 
     // Emit update
@@ -543,11 +545,13 @@ class LocationService {
         return false;
       }
 
+      if (officeLat == null || officeLng == null) return false;
+
       final distance = Geolocator.distanceBetween(
         locationData.position!.latitude,
         locationData.position!.longitude,
-        officeLat,
-        officeLng,
+        officeLat!,
+        officeLng!,
       );
 
       return distance <= allowedRadius;
@@ -624,11 +628,12 @@ class LocationData {
 
   bool get isWithinRadius {
     if (position == null) return false;
+    if (LocationService.officeLat == null || LocationService.officeLng == null) return false;
     double distance = Geolocator.distanceBetween(
       position!.latitude,
       position!.longitude,
-      LocationService.officeLat,
-      LocationService.officeLng,
+      LocationService.officeLat!,
+      LocationService.officeLng!,
     );
     return distance <= LocationService.allowedRadius;
   }
