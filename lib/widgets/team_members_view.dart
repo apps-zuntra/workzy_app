@@ -105,7 +105,9 @@ class _TeamMembersViewState extends State<TeamMembersView> {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        final docs = (snapshot.data?.docs ?? [])
+            .where((d) => FirestoreService.isDocInCurrentCompany(d))
+            .toList();
         final currentUserEmail = (AppSession().email ?? '').toLowerCase();
         String myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
         if (myDept.isEmpty) {

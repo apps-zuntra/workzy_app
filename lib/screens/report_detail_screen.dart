@@ -686,8 +686,8 @@ class _AttendanceReportBody extends StatelessWidget {
         return StreamBuilder<QuerySnapshot>(
           stream: FirestoreService.employeesCol.snapshots(),
           builder: (context, empSnap) {
-            final attDocs = attSnap.data?.docs ?? [];
-            final empDocs = empSnap.data?.docs ?? [];
+            final attDocs = attSnap.data?.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList() ?? [];
+            final empDocs = empSnap.data?.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList() ?? [];
             final now = DateTime.now();
             final totalEmp = empDocs.length;
 

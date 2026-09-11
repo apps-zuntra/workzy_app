@@ -14,7 +14,7 @@ import 'package:attendance_app/utils/notification_helper.dart';
 import 'package:attendance_app/utils/notification_service.dart';
 import 'package:attendance_app/screens/auth_wrapper.dart';
 import 'package:attendance_app/screens/profile_screen.dart';
-import 'package:attendance_app/widgets/live_attendance_builder.dart';
+import 'package:attendance_app/screens/employee/task_detail_screen.dart';
 import 'package:attendance_app/widgets/announcements_tab_view.dart';
 import 'package:attendance_app/screens/create_announcement_wizard.dart';
 import 'package:attendance_app/widgets/calendar_tab_view.dart';
@@ -316,8 +316,9 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     _subPendingLeaves =
         FirestoreService.allLeaveRequestsQuery.snapshots().listen((s) {
       leavePending = s.docs.where((d) {
-        final data = d.data() as Map;
-        return data['status'] == 'pending' && data['companyId'] == orgId;
+        final data = d.data() as Map<String, dynamic>? ?? {};
+        final status = (data['status'] ?? '').toString().toLowerCase();
+        return status == 'pending' && FirestoreService.isDocInCurrentCompany(d);
       }).length;
       emitPending();
     }, onError: (_) {});
@@ -325,28 +326,28 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         .where('status', isEqualTo: 'pending')
         .snapshots()
         .listen((s) {
-      attPending = s.docs.length;
+      attPending = s.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).length;
       emitPending();
     }, onError: (_) {});
     _subPendingShifts = FirestoreService.allShiftRequestsQuery
         .where('status', isEqualTo: 'pending')
         .snapshots()
         .listen((s) {
-      shiftPending = s.docs.length;
+      shiftPending = s.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).length;
       emitPending();
     }, onError: (_) {});
     _subPendingDepts = FirestoreService.allDepartmentRequestsQuery
         .where('status', isEqualTo: 'pending')
         .snapshots()
         .listen((s) {
-      deptPending = s.docs.length;
+      deptPending = s.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).length;
       emitPending();
     }, onError: (_) {});
     _subPendingTasks = FirestoreService.allTaskRequestsQuery
         .where('status', isEqualTo: 'pending')
         .snapshots()
         .listen((s) {
-      taskPending = s.docs.length;
+      taskPending = s.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).length;
       emitPending();
     }, onError: (_) {});
 
@@ -403,16 +404,16 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
     _subStatsAtt =
         FirestoreService.allAttendanceRecordsCol.snapshots().listen((snap) {
       statAttDocs = snap.docs
-          .where((d) => (d.data() as Map)['companyId'] == orgId)
+          .where((d) => FirestoreService.isDocInCurrentCompany(d))
           .toList();
       emitStats();
     }, onError: (_) {});
     _subStatsLeaves =
         FirestoreService.allLeaveRequestsQuery.snapshots().listen((snap) {
       statLeaveDocs = snap.docs.where((d) {
-        final data = d.data() as Map;
+        final data = d.data() as Map<String, dynamic>? ?? {};
         return (data['status'] ?? '').toString().toLowerCase() == 'approved' &&
-            data['companyId'] == orgId;
+            FirestoreService.isDocInCurrentCompany(d);
       }).toList();
       emitStats();
     }, onError: (_) {});
@@ -458,7 +459,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         .snapshots()
         .listen((snap) {
       final validDocs =
-          snap.docs.where((d) => (d.data() as Map)['companyId'] == orgId);
+          snap.docs.where((d) => FirestoreService.isDocInCurrentCompany(d));
       actLeaves = validDocs.map((doc) {
         final d = doc.data() as Map<String, dynamic>;
         final ts = parseTs(d['createdAt'] ?? d['requestDate'] ?? d['applied']);
@@ -498,7 +499,8 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
         .limit(20)
         .snapshots()
         .listen((snap) {
-      actAtts = snap.docs.map((doc) {
+      final validDocs = snap.docs.where((d) => FirestoreService.isDocInCurrentCompany(d));
+      actAtts = validDocs.map((doc) {
         final d = doc.data() as Map<String, dynamic>;
         final ts = parseTs(d['createdAt'] ?? d['requestDate']);
         final name = d['userName'] ?? d['empName'] ?? 'Employee';
@@ -602,25 +604,25 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
       });
     }
 
-    _subLeaves = FirestoreService.leaveRequestsCol.snapshots().listen((s) {
-      leaves = s.docs;
+    _subLeaves = FirestoreService.allLeaveRequestsQuery.snapshots().listen((s) {
+      leaves = s.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList();
       update();
     }, onError: (_) {});
     _subAtt = FirestoreService.allAttendanceIssuesQuery.snapshots().listen((s) {
-      attDocs = s.docs;
+      attDocs = s.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList();
       update();
     }, onError: (_) {});
     _subShifts = FirestoreService.allShiftRequestsQuery.snapshots().listen((s) {
-      shifts = s.docs;
+      shifts = s.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList();
       update();
     }, onError: (_) {});
     _subDepts =
         FirestoreService.allDepartmentRequestsQuery.snapshots().listen((s) {
-      depts = s.docs;
+      depts = s.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList();
       update();
     }, onError: (_) {});
     _subTasks = FirestoreService.allTaskRequestsQuery.snapshots().listen((s) {
-      tasks = s.docs;
+      tasks = s.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList();
       update();
     }, onError: (_) {});
   }
@@ -667,8 +669,8 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                           child: Column(
                             children: [
                               _buildHeader(),
-                              if (_selectedMainTab != 0) _buildTopNavigation(),
-                              if (_selectedMainTab != 0) _buildSubNavigation(),
+                              _buildTopNavigation(),
+                              _buildSubNavigation(),
                               Expanded(
                                 child: _selectedMainTab == 0
                                     ? (_selectedSubTab == 0
@@ -676,7 +678,9 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                                         : (_selectedSubTab == 1
                                             ? _buildApprovalsView()
                                             : (_selectedSubTab == 2
-                                                ? const AdminLeaveTab()
+                                                ? (AppSession().hasPermission('approve-leave')
+                                                    ? const AdminLeaveTab()
+                                                    : const UniversalLeaveTab())
                                                 : (_selectedSubTab == 3
                                                     ? AnnouncementsTabView(
                                                         isAdmin: true,
@@ -684,7 +688,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                                                         onCreateAnnouncement:
                                                             () => setState(() =>
                                                                 _isCreatingAnnouncement =
-                                                                    false),
+                                                                    true),
                                                       )
                                                     : (_selectedSubTab == 4
                                                         ? const CalendarTabView()
@@ -706,7 +710,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                                                         onCreateAnnouncement:
                                                             () => setState(() =>
                                                                 _isCreatingAnnouncement =
-                                                                    false),
+                                                                    true),
                                                       )
                                                     : (_selectedSubTab == 3
                                                         ? const TeamTasksView()
@@ -728,7 +732,7 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                                                             onCreateAnnouncement:
                                                                 () => setState(() =>
                                                                     _isCreatingAnnouncement =
-                                                                        false),
+                                                                        true),
                                                           )
                                                         : (_selectedSubTab == 3
                                                             ? const OrgReportsTab()
@@ -2631,7 +2635,9 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
           stream: _orgUsersStream,
           builder: (context, usersSnap) {
             final totalEmp = usersSnap.data?.docs
-                    .where((d) => (d.data() as Map)['role'] != 'admin')
+                    .where((d) =>
+                        FirestoreService.isDocInCurrentCompany(d) &&
+                        (d.data() as Map)['role'] != 'admin')
                     .length ??
                 0;
             final present = stats['present'] ?? 0;
@@ -2915,9 +2921,33 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
                 '')
             .trim()
             .toLowerCase();
+        final userUid = (user?.uid ??
+                AppSession().uid ??
+                FirebaseAuth.instance.currentUser?.uid ??
+                '')
+            .trim()
+            .toLowerCase();
+
+        const demoTitles = [
+          'Review Q3 Policy Updates',
+          'Prepare Onboarding Docs',
+          'Mobile Flow Design',
+          'Sprint Report Draft',
+          'Onboarding Screens',
+          'Design System Audit',
+          'Audit Leave Records - Q2',
+          'Generate Payroll Report',
+        ];
 
         final activeDocs = allDocs.where((d) {
+          if (!FirestoreService.isDocInCurrentCompany(d)) return false;
           final data = d.data() as Map<String, dynamic>;
+          final title = (data['title'] ?? '').toString();
+          if (demoTitles.contains(title)) {
+            d.reference.delete();
+            return false;
+          }
+
           final s = (data['status'] as String? ?? 'assigned').toLowerCase();
 
           final assignedTo = (data['assignedTo'] ??
@@ -2930,9 +2960,19 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
               .toString()
               .trim()
               .toLowerCase();
+          final assigneeUid = (data['userId'] ??
+                  data['uid'] ??
+                  data['assignedToUid'] ??
+                  '')
+              .toString()
+              .trim()
+              .toLowerCase();
 
           bool isMine = false;
-          if (userEmail.isNotEmpty && assignedTo.isNotEmpty) {
+          if (userUid.isNotEmpty && assigneeUid.isNotEmpty && userUid == assigneeUid) {
+            isMine = true;
+          }
+          if (!isMine && userEmail.isNotEmpty && assignedTo.isNotEmpty) {
             if (assignedTo == userEmail ||
                 assignedTo.contains(userEmail) ||
                 userEmail.contains(assignedTo)) {
@@ -2966,22 +3006,37 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('MY TASKS',
+                  GestureDetector(
+                    onTap: () => setState(() => _selectedSubTab = 5),
+                    behavior: HitTestBehavior.opaque,
+                    child: Row(
+                      children: const [
+                        Text('MY TASKS',
+                            style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF6B7280),
+                                letterSpacing: 0.5)),
+                        SizedBox(width: 4),
+                        Icon(Icons.chevron_right_rounded,
+                            size: 16, color: Color(0xFF6B7280)),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => setState(() => _selectedSubTab = 5),
+                    behavior: HitTestBehavior.opaque,
+                    child: Text(
+                      activeCount == 0
+                          ? 'No active tasks'
+                          : '$activeCount active · View All',
                       style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF6B7280),
-                          letterSpacing: 0.5)),
-                  Text(
-                    activeCount == 0
-                        ? 'No active tasks'
-                        : '$activeCount active',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: activeCount > 0
-                          ? const Color(0xFF5C5CFF)
-                          : const Color(0xFF9CA3AF),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: activeCount > 0
+                            ? const Color(0xFF5C5CFF)
+                            : const Color(0xFF9CA3AF),
+                      ),
                     ),
                   ),
                 ],
@@ -3054,53 +3109,67 @@ class _UnifiedDashboardScreenState extends State<UnifiedDashboardScreen> {
 
                   return Column(
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(title,
-                                    style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: Color(0xFF1F2937)),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis),
-                                const SizedBox(height: 4),
-                                Text(dueDateStr,
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF9CA3AF),
-                                        fontWeight: FontWeight.w500)),
-                              ],
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TaskDetailScreen(
+                                taskId: doc.id,
+                                initialTaskData: data,
+                              ),
                             ),
-                          ),
-                          if (timerStr != null) ...[
-                            Text(timerStr,
-                                style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF9CA3AF))),
-                            const SizedBox(width: 8),
+                          );
+                        },
+                        behavior: HitTestBehavior.opaque,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(title,
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF1F2937)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis),
+                                  const SizedBox(height: 4),
+                                  Text(dueDateStr,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFF9CA3AF),
+                                          fontWeight: FontWeight.w500)),
+                                ],
+                              ),
+                            ),
+                            if (timerStr != null) ...[
+                              Text(timerStr,
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF9CA3AF))),
+                              const SizedBox(width: 8),
+                            ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: badgeBg,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: badgeColor.withOpacity(0.3)),
+                              ),
+                              child: Text(badgeText,
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: badgeColor)),
+                            ),
                           ],
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: badgeBg,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                  color: badgeColor.withOpacity(0.3)),
-                            ),
-                            child: Text(badgeText,
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: badgeColor)),
-                          ),
-                        ],
+                        ),
                       ),
                       if (i < displayDocs.length - 1)
                         const Divider(height: 28, color: Color(0xFFF3F4F6)),

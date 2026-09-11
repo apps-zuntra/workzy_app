@@ -548,8 +548,8 @@ class _CalendarTabViewState extends State<CalendarTabView> {
                   .collection('holidays')
                   .snapshots(),
               builder: (context, holidaySnap) {
-                final leaves = leaveSnap.data?.docs ?? [];
-                final attendance = attSnap.data?.docs ?? [];
+                final leaves = leaveSnap.data?.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList() ?? [];
+                final attendance = attSnap.data?.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList() ?? [];
                 final holidays = holidaySnap.data?.docs ?? [];
 
                 final eventMap = _buildEventMap(

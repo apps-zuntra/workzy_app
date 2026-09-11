@@ -75,13 +75,13 @@ class AppSession {
   List<String> _getDefaultPermissionsFor(String roleKey) {
     final r = roleKey.toLowerCase();
     if (r == 'super_admin' || r == 'superadmin') {
-      return ["my-space", "dashboard-approval", "dashboard-leave", "team", "team-approval", "create-announcement", "organization", "attendance", "approve-attendance", "leave", "approve-leave", "tasks", "create-task", "documents", "settings", "support", "approvals", "reports"];
+      return ["my-space", "dashboard-approval", "dashboard-leave", "team", "team-approval", "create-announcement", "announcements", "calendar", "organization", "attendance", "approve-attendance", "leave", "approve-leave", "tasks", "create-task", "documents", "settings", "support", "approvals", "reports"];
     } else if (r == 'hr_admin' || r == 'hradmin') {
-      return ["my-space", "dashboard-approval", "dashboard-leave", "team", "team-approval", "create-announcement", "organization", "attendance", "approve-attendance", "leave", "approve-leave", "tasks", "create-task", "documents", "support", "approvals", "reports"];
+      return ["my-space", "dashboard-approval", "dashboard-leave", "team", "team-approval", "create-announcement", "announcements", "calendar", "organization", "attendance", "approve-attendance", "leave", "approve-leave", "tasks", "create-task", "documents", "support", "approvals", "reports"];
     } else if (r == 'manager') {
-      return ["my-space", "dashboard-approval", "dashboard-leave", "team", "team-approval", "create-announcement", "attendance", "approve-attendance", "leave", "approve-leave", "tasks", "create-task", "documents", "support", "approvals", "reports"];
+      return ["my-space", "dashboard-approval", "dashboard-leave", "team", "team-approval", "create-announcement", "announcements", "calendar", "organization", "attendance", "approve-attendance", "leave", "approve-leave", "tasks", "create-task", "documents", "support", "approvals", "reports"];
     } else {
-      return ["my-space", "dashboard-leave", "attendance", "leave", "tasks", "documents", "support"];
+      return ["my-space", "dashboard-leave", "attendance", "leave", "tasks", "documents", "support", "announcements", "calendar"];
     }
   }
 

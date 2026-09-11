@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
@@ -59,7 +59,7 @@ class _LateEarlyExitScreenState extends State<LateEarlyExitScreen> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirestoreService.companyUsersQuery.snapshots(),
         builder: (context, usersSnap) {
-          final usersDocs = usersSnap.data?.docs ?? [];
+          final usersDocs = (usersSnap.data?.docs ?? []).where(FirestoreService.isDocInCurrentCompany).toList();
 
           return StreamBuilder<QuerySnapshot>(
             stream: FirestoreService.allAttendanceRecordsCol
@@ -72,8 +72,9 @@ class _LateEarlyExitScreenState extends State<LateEarlyExitScreen> {
 
               final allDocs = recordsSnap.data?.docs ?? [];
 
-              // â”€â”€ Month filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Month filter ──────────────────────────────────
               final monthRecords = allDocs.where((doc) {
+                if (!FirestoreService.isDocInCurrentCompany(doc)) return false;
                 final data = doc.data() as Map<String, dynamic>;
                 final dateTs = data['date'] as Timestamp?;
                 if (dateTs == null) return false;

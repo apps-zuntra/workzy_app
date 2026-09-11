@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -617,7 +617,7 @@ class _ManagerProfileTabState extends State<ManagerProfileTab> {
     try {
       // 1. Get all employees
       final usersSnapshot = await FirestoreService.companyUsersQuery.get();
-      final employees = usersSnapshot.docs.where((d) => (d.data()['role'] ?? 'employee').toString().toLowerCase() == 'employee').toList();
+      final employees = usersSnapshot.docs.where((d) => FirestoreService.isDocInCurrentCompany(d) && (d.data()['role'] ?? 'employee').toString().toLowerCase() == 'employee').toList();
       
       // 2. Get all attendance for the month
       final attendanceSnapshot = await FirestoreService.allAttendanceRecordsCol.get();
@@ -626,6 +626,7 @@ class _ManagerProfileTabState extends State<ManagerProfileTab> {
       // Map to store records by email and date: { email: { date: data } }
       Map<String, Map<String, dynamic>> attendanceMap = {};
       for (var doc in attendanceSnapshot.docs) {
+        if (!FirestoreService.isDocInCurrentCompany(doc)) continue;
         if (!doc.id.startsWith(monthStr)) continue;
         final data = doc.data() as Map<String, dynamic>;
         final email = (data['email'] ?? '').toString().toLowerCase();
@@ -978,7 +979,7 @@ class _ManagerProfileTabState extends State<ManagerProfileTab> {
     try {
       // 1. Get all employees
       final usersSnapshot = await FirestoreService.companyUsersQuery.get();
-      final employees = usersSnapshot.docs.where((d) => (d.data()['role'] ?? 'employee').toString().toLowerCase() == 'employee').toList();
+      final employees = usersSnapshot.docs.where((d) => FirestoreService.isDocInCurrentCompany(d) && (d.data()['role'] ?? 'employee').toString().toLowerCase() == 'employee').toList();
       
       // 2. Get attendance and leave requests
       final attendanceSnapshot = await FirestoreService.allAttendanceRecordsCol.get();
@@ -1018,6 +1019,7 @@ class _ManagerProfileTabState extends State<ManagerProfileTab> {
 
         // 1. Mark Present Days
         for (var doc in attendanceSnapshot.docs) {
+          if (!FirestoreService.isDocInCurrentCompany(doc)) continue;
           if (!doc.id.startsWith(monthStr)) continue;
           final data = doc.data() as Map<String, dynamic>;
           final docEmail = (data['email'] ?? data['userId'] ?? '').toString().toLowerCase();

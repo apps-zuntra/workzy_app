@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:attendance_app/screens/department_detail_screen.dart';
@@ -50,7 +50,9 @@ class TeamDepartmentsView extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final docs = snapshot.data?.docs ?? [];
+          final docs = (snapshot.data?.docs ?? [])
+              .where((d) => FirestoreService.isDocInCurrentCompany(d))
+              .toList();
           
           if (docs.isEmpty) {
             return const Center(child: Text('No departments found.', style: TextStyle(color: Color(0xFF6B7280))));

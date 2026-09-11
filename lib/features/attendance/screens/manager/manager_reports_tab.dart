@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:convert';
@@ -57,16 +57,18 @@ class _ManagerReportsTabState extends State<ManagerReportsTab> {
         if (usersSnap.hasError) return const Scaffold(body: Center(child: Text('Service Unavailable')));
         if (usersSnap.connectionState == ConnectionState.waiting) return const Scaffold(body: Center(child: CircularProgressIndicator()));
         
-        final usersDocs = usersSnap.data?.docs ?? [];
+        final usersDocs = (usersSnap.data?.docs ?? []).where(FirestoreService.isDocInCurrentCompany).toList();
 
         return StreamBuilder<QuerySnapshot>(
           stream: _recordsStream,
           builder: (context, allRecordsSnap) {
-            // Filter everything in-memory to solve all index issues once and for all
+            // Filter everything in-memory to solve all index issues once and for all and enforce multi-tenancy
             final startOfMonthDt = DateTime(startOfMonth.year, startOfMonth.month, startOfMonth.day);
             final endOfMonthDt = DateTime(endOfMonth.year, endOfMonth.month, endOfMonth.day, 23, 59, 59);
 
-            final allDocs = allRecordsSnap.data?.docs ?? [];
+            final allDocs = (allRecordsSnap.data?.docs ?? [])
+                .where(FirestoreService.isDocInCurrentCompany)
+                .toList();
             final allMonthRecords = allDocs.where((doc) {
               final data = doc.data() as Map<String, dynamic>;
               final dateTs = data['date'] as Timestamp?;

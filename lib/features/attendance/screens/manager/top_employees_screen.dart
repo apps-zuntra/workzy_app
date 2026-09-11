@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
@@ -66,6 +66,7 @@ class _TopEmployeesScreenState extends State<TopEmployeesScreen> {
         builder: (context, usersSnap) {
           if (!usersSnap.hasData) return const Center(child: CircularProgressIndicator());
           final usersDocs = usersSnap.data!.docs.where((u) {
+            if (!FirestoreService.isDocInCurrentCompany(u)) return false;
             final d = u.data() as Map<String, dynamic>;
             return (d['role']?.toString().toLowerCase() ?? 'employee') == 'employee';
           }).toList();
@@ -100,6 +101,7 @@ class _TopEmployeesScreenState extends State<TopEmployeesScreen> {
                 builder: (context, recordsSnap) {
                   if (!recordsSnap.hasData) return const Center(child: CircularProgressIndicator());
                   final records = recordsSnap.data!.docs.where((doc) {
+                    if (!FirestoreService.isDocInCurrentCompany(doc)) return false;
                     final data = doc.data() as Map<String, dynamic>;
                     final dateTs = data['date'] as Timestamp?;
                     if (dateTs == null) return false;

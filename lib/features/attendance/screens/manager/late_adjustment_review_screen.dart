@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:attendance_app/theme/app_theme.dart';
@@ -108,6 +108,7 @@ class _LateAdjustmentReviewScreenState
 
         // Filter and sort in-memory to avoid all collectionGroup index requirements
         final allRequests = snapshot.data!.docs.where((doc) {
+          if (!FirestoreService.isDocInCurrentCompany(doc)) return false;
           final data = doc.data() as Map<String, dynamic>;
           return data['remarkStatus'] == statusValue;
         }).toList()

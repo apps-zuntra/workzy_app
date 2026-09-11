@@ -46,11 +46,10 @@ class _AdminLeaveTabState extends State<AdminLeaveTab> {
         final currentCompanyId = AppSession().companyId;
         final allDocs = snapshot.data?.docs ?? [];
         final docs = allDocs.where((doc) {
-          final d = doc.data() as Map<String, dynamic>;
-          final docCompanyId = d['companyId'] as String?;
-          if (docCompanyId != null && currentCompanyId != null && docCompanyId != currentCompanyId) {
+          if (!FirestoreService.isDocInCurrentCompany(doc)) {
             return false;
           }
+          final d = doc.data() as Map<String, dynamic>;
           final e1 = (d['applicantEmail'] ?? '').toString().toLowerCase();
           final e2 = (d['employeeEmail'] ?? '').toString().toLowerCase();
           final e3 = (d['email'] ?? '').toString().toLowerCase();

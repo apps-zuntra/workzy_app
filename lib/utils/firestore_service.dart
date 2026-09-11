@@ -30,6 +30,26 @@ class FirestoreService {
   /// Public getter for the current tenant's companyId
   static String get companyId => _cid;
 
+  /// Strict multi-tenant guard: returns true ONLY if [doc] belongs to the active company.
+  /// Checks both explicit 'companyId' field and document path structure.
+  static bool isDocInCurrentCompany(DocumentSnapshot doc) {
+    final currentCid = (AppSession().companyId ?? '').trim().toLowerCase();
+    if (currentCid.isEmpty) return false;
+
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+    final docCid = (data['companyId'] as String?)?.trim().toLowerCase();
+    final path = doc.reference.path.toLowerCase();
+
+    // 1. If document explicitly specifies a companyId, it MUST match the active company
+    if (docCid != null && docCid.isNotEmpty) {
+      return docCid == currentCid;
+    }
+
+    // 2. Otherwise, document MUST be stored within organizations/{currentCid}/...
+    return path.contains('/organizations/$currentCid/') ||
+        path.startsWith('organizations/$currentCid/');
+  }
+
   // â”€â”€ Global (cross-company) refs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /// `approved_users/{email}` â€” global login / company mapping.
@@ -43,8 +63,9 @@ class FirestoreService {
       _db.collection('organizations').doc(companyId ?? _cid);
 
   /// `organization_setup_requests/{requestId}` â€” pre-login organization setup submissions.
-  static CollectionReference<Map<String, dynamic>> get organizationSetupRequestsCol =>
-      _db.collection('organization_setup_requests');
+  static CollectionReference<Map<String, dynamic>>
+      get organizationSetupRequestsCol =>
+          _db.collection('organization_setup_requests');
 
   // â”€â”€ New: Organizations (self-registration flow) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Used when a company admin registers directly via the app.
@@ -60,7 +81,8 @@ class FirestoreService {
       orgCol.doc(orgId);
 
   /// `organizations/{orgId}/members` â€” all admin/employee profiles for this org.
-  static CollectionReference<Map<String, dynamic>> orgMembersCol(String orgId) =>
+  static CollectionReference<Map<String, dynamic>> orgMembersCol(
+          String orgId) =>
       orgDoc(orgId).collection('members');
 
   /// `organizations/{orgId}/members/{uid}` â€” a single member's profile.
@@ -84,8 +106,7 @@ class FirestoreService {
       orgDoc(orgId).collection('holidays');
 
   /// `organizations/{orgId}/shifts`
-  static CollectionReference<Map<String, dynamic>> orgShiftsCol(
-          String orgId) =>
+  static CollectionReference<Map<String, dynamic>> orgShiftsCol(String orgId) =>
       orgDoc(orgId).collection('shifts');
 
   /// `organizations/{orgId}/policies`
@@ -116,14 +137,18 @@ class FirestoreService {
 
   /// Get a stream of the employee document by email.
   /// Primary lookup is by document ID (email), with a fallback query.
-  static Stream<DocumentSnapshot<Map<String, dynamic>>> userStreamByEmail(String email) {
+  static Stream<DocumentSnapshot<Map<String, dynamic>>> userStreamByEmail(
+      String email) {
     final normalizedEmail = email.toLowerCase();
     return employeesCol.doc(normalizedEmail).snapshots().asyncMap((doc) async {
       if (doc.exists) return doc;
-      
+
       // Fallback: search for a document where the 'email' FIELD matches
       try {
-        final qs = await employeesCol.where('email', isEqualTo: normalizedEmail).limit(1).get();
+        final qs = await employeesCol
+            .where('email', isEqualTo: normalizedEmail)
+            .limit(1)
+            .get();
         if (qs.docs.isNotEmpty) return qs.docs.first;
       } catch (e) {
         debugPrint('userStreamByEmail fallback query failed: $e');
@@ -133,19 +158,23 @@ class FirestoreService {
   }
 
   /// `/organizations/{companyId}/users/{email}/attendance`
-  static CollectionReference<Map<String, dynamic>> userAttendanceCol(String email) =>
+  static CollectionReference<Map<String, dynamic>> userAttendanceCol(
+          String email) =>
       employeeDoc(email).collection('attendance');
 
   /// `/organizations/{companyId}/users/{email}/leave_requests`
-  static CollectionReference<Map<String, dynamic>> userLeaveRequestsCol(String email) =>
+  static CollectionReference<Map<String, dynamic>> userLeaveRequestsCol(
+          String email) =>
       employeeDoc(email).collection('leave_requests');
 
   /// `/organizations/{companyId}/users/{email}/notifications`
-  static CollectionReference<Map<String, dynamic>> userNotificationsCol(String email) =>
+  static CollectionReference<Map<String, dynamic>> userNotificationsCol(
+          String email) =>
       employeeDoc(email).collection('notifications');
 
   /// `/organizations/{companyId}/users/{email}/overtime_requests`
-  static CollectionReference<Map<String, dynamic>> userOvertimeRequestsCol(String email) =>
+  static CollectionReference<Map<String, dynamic>> userOvertimeRequestsCol(
+          String email) =>
       employeeDoc(email).collection('overtime_requests');
 
   // â”€â”€ Collection Group Queries (Manager Access) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -188,7 +217,9 @@ class FirestoreService {
 
   /// All notifications for the current company via collection group query.
   static Query<Map<String, dynamic>> get allNotificationsQuery {
-    return _db.collectionGroup('notifications').where('companyId', isEqualTo: _cid);
+    return _db
+        .collectionGroup('notifications')
+        .where('companyId', isEqualTo: _cid);
   }
 
   /// All tasks for the current company via collection group query.
@@ -197,11 +228,12 @@ class FirestoreService {
   }
 
   /// Alias for backward compatibility
-  static Query<Map<String, dynamic>> get companyLeaveRequestsQuery => allLeaveRequestsQuery;
+  static Query<Map<String, dynamic>> get companyLeaveRequestsQuery =>
+      allLeaveRequestsQuery;
 
   // â”€â”€ Global Company Notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // These are notifications meant for the entire company, not a specific user.
-  
+
   /// `/organizations/{companyId}/global_notifications`
   static CollectionReference<Map<String, dynamic>> get globalNotificationsCol =>
       companyDoc().collection('global_notifications');
@@ -241,7 +273,8 @@ class FirestoreService {
       companyDoc().collection('attendance');
 
   /// @deprecated Use [userAttendanceCol]
-  static CollectionReference<Map<String, dynamic>> attendanceRecordsCol(String uidOrEmail) {
+  static CollectionReference<Map<String, dynamic>> attendanceRecordsCol(
+      String uidOrEmail) {
     // Attempting to maintain some compatibility during transition
     if (uidOrEmail.contains('@')) return userAttendanceCol(uidOrEmail);
     return attendanceCol.doc(uidOrEmail).collection('records');
@@ -270,8 +303,7 @@ class FirestoreService {
       employeesCol.doc(uid);
 
   /// Alias for `employeeDoc(email)` â€” backward compatible
-  static DocumentReference<Map<String, dynamic>> userDocByEmail(
-          String email) =>
+  static DocumentReference<Map<String, dynamic>> userDocByEmail(String email) =>
       employeesCol.doc(email.toLowerCase());
 
   /// Find a company where the given email is the manager.
@@ -291,10 +323,16 @@ class FirestoreService {
     required Map<String, dynamic> requestData,
   }) async {
     try {
-      final email = (requestData['userId'] ?? requestData['userEmail'] ?? requestData['email'] ?? '').toString();
+      final email = (requestData['userId'] ??
+              requestData['userEmail'] ??
+              requestData['email'] ??
+              '')
+          .toString();
       if (email.isEmpty) return;
 
-      final attDateVal = requestData['attendanceDate'] ?? requestData['date'] ?? requestData['requestedDate'];
+      final attDateVal = requestData['attendanceDate'] ??
+          requestData['date'] ??
+          requestData['requestedDate'];
       DateTime? baseDate;
       if (attDateVal is Timestamp) baseDate = attDateVal.toDate();
       if (attDateVal is String) baseDate = DateTime.tryParse(attDateVal);
@@ -310,7 +348,8 @@ class FirestoreService {
             final parts = rawTime.split(':');
             final h = int.tryParse(parts[0].trim()) ?? 0;
             final m = int.tryParse(parts[1].trim()) ?? 0;
-            return Timestamp.fromDate(DateTime(date.year, date.month, date.day, h, m));
+            return Timestamp.fromDate(
+                DateTime(date.year, date.month, date.day, h, m));
           }
           final parsed = DateTime.tryParse(rawTime);
           if (parsed != null) return Timestamp.fromDate(parsed);
@@ -318,12 +357,21 @@ class FirestoreService {
         return null;
       }
 
-      final checkInTs = parseTime(requestData['correctedCheckIn'] ?? requestData['checkInTime'] ?? requestData['checkIn'], baseDate);
-      final checkOutTs = parseTime(requestData['correctedCheckOut'] ?? requestData['checkOutTime'] ?? requestData['checkOut'], baseDate);
+      final checkInTs = parseTime(
+          requestData['correctedCheckIn'] ??
+              requestData['checkInTime'] ??
+              requestData['checkIn'],
+          baseDate);
+      final checkOutTs = parseTime(
+          requestData['correctedCheckOut'] ??
+              requestData['checkOutTime'] ??
+              requestData['checkOut'],
+          baseDate);
 
       final Map<String, dynamic> updatePayload = {
         'status': 'present',
-        'date': Timestamp.fromDate(DateTime(baseDate.year, baseDate.month, baseDate.day)),
+        'date': Timestamp.fromDate(
+            DateTime(baseDate.year, baseDate.month, baseDate.day)),
         'recordDate': docId,
         'isCorrection': true,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -337,7 +385,9 @@ class FirestoreService {
         updatePayload['checkOutTime'] = checkOutTs;
       }
 
-      await userAttendanceCol(email).doc(docId).set(updatePayload, SetOptions(merge: true));
+      await userAttendanceCol(email)
+          .doc(docId)
+          .set(updatePayload, SetOptions(merge: true));
     } catch (e) {
       debugPrint('Error applying attendance correction timing: $e');
     }

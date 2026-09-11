@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:attendance_app/theme/app_theme.dart';
@@ -88,14 +88,16 @@ class _MonthlyAbsenceScreenState extends State<MonthlyAbsenceScreen> {
           if (!usersSnap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final usersDocs = usersSnap.data!.docs;
+          final usersDocs = usersSnap.data!.docs.where(FirestoreService.isDocInCurrentCompany).toList();
 
           return StreamBuilder<QuerySnapshot>(
             stream: FirestoreService.allAttendanceRecordsCol
                 .snapshots(),
             builder: (context, recordsSnap) {
-              // Filter in-memory to avoid index issues
-              final allDocs = recordsSnap.data?.docs ?? [];
+              // Filter in-memory to avoid index issues and isolate company data
+              final allDocs = (recordsSnap.data?.docs ?? [])
+                  .where(FirestoreService.isDocInCurrentCompany)
+                  .toList();
               final monthRecords = allDocs.where((doc) {
                 final data = doc.data() as Map<String, dynamic>;
                 final dateTs = data['date'] as Timestamp? ?? data['checkIn'] as Timestamp?;

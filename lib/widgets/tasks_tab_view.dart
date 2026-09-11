@@ -17,7 +17,6 @@ class TasksTabView extends StatefulWidget {
 class _TasksTabViewState extends State<TasksTabView> {
   int _selectedTab = 0; // 0: Assigned, 1: In Progress, 2: Completed, 3: Overdue
   Timer? _timer;
-  bool _hasSeeded = false;
   final Map<String, TextEditingController> _cardCommentControllers = {};
 
   @override
@@ -83,9 +82,13 @@ class _TasksTabViewState extends State<TasksTabView> {
   bool _isAssignedToCurrentUser(Map<String, dynamic> data) {
     final userEmail = (AppSession().email ?? FirebaseAuth.instance.currentUser?.email ?? '').trim().toLowerCase();
     final userName = (AppSession().userName ?? FirebaseAuth.instance.currentUser?.displayName ?? '').trim().toLowerCase();
+    final userUid = (AppSession().uid ?? FirebaseAuth.instance.currentUser?.uid ?? '').trim().toLowerCase();
 
     final assigneeEmail = (data['assigneeEmail'] ?? data['assignedToEmail'] ?? data['employeeEmail'] ?? data['email'] ?? '').toString().trim().toLowerCase();
     final assignee = (data['assignee'] ?? data['assigneeName'] ?? data['assignedTo'] ?? data['userEmail'] ?? '').toString().trim().toLowerCase();
+    final assigneeUid = (data['userId'] ?? data['uid'] ?? data['assignedToUid'] ?? '').toString().trim().toLowerCase();
+
+    if (userUid.isNotEmpty && assigneeUid.isNotEmpty && userUid == assigneeUid) return true;
 
     if (userEmail.isNotEmpty && assigneeEmail.isNotEmpty) {
       if (assigneeEmail == userEmail || assigneeEmail.contains(userEmail) || userEmail.contains(assigneeEmail)) return true;
@@ -102,143 +105,6 @@ class _TasksTabViewState extends State<TasksTabView> {
     return false;
   }
 
-  // Seed sample tasks matching user screenshots if Firestore collection is empty
-  Future<void> _seedInitialTasksIfEmpty(List<QueryDocumentSnapshot> docs) async {
-    if (_hasSeeded || docs.isNotEmpty) return;
-    _hasSeeded = true;
-    try {
-      final col = FirestoreService.tasksCol;
-      final now = DateTime.now();
-      final currentEmail = AppSession().email ?? FirebaseAuth.instance.currentUser?.email ?? '';
-      final currentName = AppSession().userName ?? 'Alex Johnson';
-      
-      final demoTasks = [
-        {
-          'title': 'Review Q3 Policy Updates',
-          'assignedBy': 'CEO Office',
-          'department': 'CEO Office',
-          'assigneeEmail': currentEmail,
-          'assignee': currentName,
-          'dueDate': Timestamp.fromDate(now.add(const Duration(days: 2))),
-          'status': 'assigned',
-          'priority': 'High',
-          'estimatedHours': 4.0,
-          'description': 'Review Q3 policy updates document and submit feedback to CEO Office.',
-          'createdAt': FieldValue.serverTimestamp(),
-          'comments': [],
-        },
-        {
-          'title': 'Prepare Onboarding Docs',
-          'assignedBy': 'VP HR',
-          'department': 'VP HR',
-          'assigneeEmail': currentEmail,
-          'assignee': currentName,
-          'dueDate': Timestamp.fromDate(now.add(const Duration(days: 7))),
-          'status': 'assigned',
-          'priority': 'High',
-          'estimatedHours': 4.0,
-          'description': 'Review and finalize wireframes for the mobile app v3. Check all user flows and export annotated screens.',
-          'createdAt': FieldValue.serverTimestamp(),
-          'comments': [],
-        },
-        {
-          'title': 'Mobile Flow Design',
-          'assignedBy': 'VP HR',
-          'department': 'Design',
-          'assigneeEmail': currentEmail,
-          'assignee': currentName,
-          'dueDate': Timestamp.fromDate(now),
-          'status': 'in_progress',
-          'priority': 'High',
-          'estimatedHours': 4.0,
-          'totalElapsedSeconds': 5700, // 1h 35m
-          'timerStart': Timestamp.fromDate(now.subtract(const Duration(hours: 1, minutes: 35))),
-          'isPaused': false,
-          'progress': 65,
-          'description': 'Design and refine user flows for the mobile app v3. Ensure responsive layout and smooth transitions.',
-          'createdAt': FieldValue.serverTimestamp(),
-          'comments': [],
-        },
-        {
-          'title': 'Sprint Report Draft',
-          'assignedBy': 'VP HR',
-          'department': 'Engineering',
-          'assigneeEmail': currentEmail,
-          'assignee': currentName,
-          'dueDate': Timestamp.fromDate(now),
-          'status': 'in_progress',
-          'priority': 'High',
-          'estimatedHours': 2.0,
-          'totalElapsedSeconds': 3031, // 50m 31s
-          'timerStart': Timestamp.fromDate(now.subtract(const Duration(minutes: 50, seconds: 31))),
-          'isPaused': false,
-          'progress': 80,
-          'description': 'Draft team sprint report summarizing completed tasks, blockers, and next sprint commitments.',
-          'createdAt': FieldValue.serverTimestamp(),
-          'comments': [],
-        },
-        {
-          'title': 'Onboarding Screens',
-          'assignedBy': 'Rahul Mehta',
-          'assignee': currentName,
-          'assigneeEmail': currentEmail,
-          'completedDate': 'Jul 25, 2026',
-          'status': 'completed',
-          'managerReview': 'Approved',
-          'description': 'Create high-fidelity onboarding screens for new employees.',
-          'createdAt': FieldValue.serverTimestamp(),
-          'comments': [],
-        },
-        {
-          'title': 'Design System Audit',
-          'assignedBy': 'Rahul Mehta',
-          'assignee': currentName,
-          'assigneeEmail': currentEmail,
-          'completedDate': 'Jul 22, 2026',
-          'status': 'completed',
-          'managerReview': 'Pending',
-          'description': 'Audit existing color tokens, typography scales, and UI components across mobile app.',
-          'createdAt': FieldValue.serverTimestamp(),
-          'comments': [],
-        },
-        {
-          'title': 'Audit Leave Records - Q2',
-          'assignedBy': 'CFO',
-          'department': 'Finance',
-          'assigneeEmail': currentEmail,
-          'assignee': currentName,
-          'dueDate': Timestamp.fromDate(now.subtract(const Duration(days: 5))),
-          'status': 'overdue',
-          'priority': 'High',
-          'estimatedHours': 3.0,
-          'description': 'Review and audit leave records for Q2 to ensure compliance with company policies.',
-          'createdAt': FieldValue.serverTimestamp(),
-          'comments': [],
-        },
-        {
-          'title': 'Generate Payroll Report',
-          'assignedBy': 'Finance Lead',
-          'department': 'Finance',
-          'assigneeEmail': currentEmail,
-          'assignee': currentName,
-          'dueDate': Timestamp.fromDate(now.subtract(const Duration(days: 7))),
-          'status': 'overdue',
-          'priority': 'High',
-          'estimatedHours': 5.0,
-          'description': 'Generate monthly payroll report for HR approval.',
-          'createdAt': FieldValue.serverTimestamp(),
-          'comments': [],
-        },
-      ];
-
-      for (var t in demoTasks) {
-        await col.add(t);
-      }
-    } catch (e) {
-      debugPrint('Error seeding demo tasks: $e');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -251,12 +117,32 @@ class _TasksTabViewState extends State<TasksTabView> {
           }
 
           final docs = snapshot.data?.docs ?? [];
-          if (docs.isEmpty && !_hasSeeded) {
-            _seedInitialTasksIfEmpty(docs);
-          }
 
-          // Filter tasks so that each user ONLY sees tasks assigned to their email address
-          final userDocs = docs.where((doc) {
+          // Clean up any previously seeded demo tasks so only real database tasks exist
+          const demoTitles = [
+            'Review Q3 Policy Updates',
+            'Prepare Onboarding Docs',
+            'Mobile Flow Design',
+            'Sprint Report Draft',
+            'Onboarding Screens',
+            'Design System Audit',
+            'Audit Leave Records - Q2',
+            'Generate Payroll Report',
+          ];
+
+          final realDocs = docs.where((doc) {
+            if (!FirestoreService.isDocInCurrentCompany(doc)) return false;
+            final data = doc.data() as Map<String, dynamic>;
+            final title = (data['title'] ?? '').toString();
+            if (demoTitles.contains(title)) {
+              doc.reference.delete();
+              return false;
+            }
+            return true;
+          }).toList();
+
+          // Filter tasks so that each user ONLY sees real tasks assigned to them
+          final userDocs = realDocs.where((doc) {
             final data = doc.data() as Map<String, dynamic>;
             return _isAssignedToCurrentUser(data);
           }).toList();
@@ -404,8 +290,8 @@ class _TasksTabViewState extends State<TasksTabView> {
   Widget _buildTaskCard(String id, Map<String, dynamic> data) {
     final normStatus = _normalizeStatus(data);
     final title = data['title'] ?? data['taskName'] ?? 'Untitled Task';
-    final priority = data['priority'] ?? 'High';
-    final assignedBy = data['assignedBy'] ?? data['department'] ?? data['reporterName'] ?? 'VP HR';
+    final priority = data['priority'] ?? 'Medium';
+    final assignedBy = data['assignedBy'] ?? data['department'] ?? data['reporterName'] ?? 'Unassigned';
 
     // Dates
     final dueDate = _parseDateTime(data['dueDate'] ?? data['due']);
@@ -531,20 +417,19 @@ class _TasksTabViewState extends State<TasksTabView> {
     final timerStart = _parseDateTime(data['timerStart'] ?? data['startedAt']);
     final startTimeStr = timerStart != null
         ? DateFormat('hh:mm a').format(timerStart)
-        : '01:48 PM';
+        : '-';
 
     // Calculate real-time elapsed seconds
-    int baseElapsed = (data['totalElapsedSeconds'] as num?)?.toInt() ?? 5700; // default 1h 35m if not set
+    int baseElapsed = (data['totalElapsedSeconds'] as num?)?.toInt() ?? 0;
     if (!isPaused && timerStart != null) {
       final now = DateTime.now();
       final diff = now.difference(timerStart).inSeconds;
       if (diff > 0) baseElapsed += diff;
     }
 
-    double estHours = (data['estimatedHours'] as num?)?.toDouble() ?? 4.0;
+    double estHours = (data['estimatedHours'] as num?)?.toDouble() ?? 0.0;
     int estSeconds = (estHours * 3600).toInt();
-    int remainingSeconds = estSeconds - baseElapsed;
-    if (remainingSeconds < 0) remainingSeconds = 0;
+    int remainingSeconds = estSeconds > baseElapsed ? estSeconds - baseElapsed : 0;
 
     _cardCommentControllers[id] ??= TextEditingController();
     final commentCtrl = _cardCommentControllers[id]!;
@@ -626,11 +511,13 @@ class _TasksTabViewState extends State<TasksTabView> {
                     color: isPaused ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  'Started $startTimeStr',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500),
-                ),
+                if (startTimeStr != '-') ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    'Started $startTimeStr',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 14),
@@ -665,7 +552,7 @@ class _TasksTabViewState extends State<TasksTabView> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Text(
-                          _formatDurationHM(remainingSeconds),
+                          estSeconds > 0 ? _formatDurationHM(remainingSeconds) : '-',
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
                         ),
                         const SizedBox(height: 4),
@@ -681,7 +568,7 @@ class _TasksTabViewState extends State<TasksTabView> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Text(
-                          _formatDurationHM(estSeconds),
+                          estSeconds > 0 ? _formatDurationHM(estSeconds) : 'Not set',
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1F2937)),
                         ),
                         const SizedBox(height: 4),
@@ -814,10 +701,11 @@ class _TasksTabViewState extends State<TasksTabView> {
 
   // ── Completed Card UI (Matches Screen 3) ──────────────────────────────
   Widget _buildCompletedCard(String id, Map<String, dynamic> data, String title) {
-    final assignee = data['assignee'] ?? data['assignedToName'] ?? 'Rahul Mehta';
-    final completedDate = data['completedDate'] ?? 'Jul 25, 2026';
-    final managerReview = data['managerReview'] ?? 'Approved';
-    final isApproved = managerReview == 'Approved';
+    final assignee = data['assignee'] ?? data['assigneeName'] ?? data['assignedToName'] ?? data['assignedTo'] ?? 'Unassigned';
+    final compDt = _parseDateTime(data['completedAt'] ?? data['completedDate']);
+    final completedDate = compDt != null ? DateFormat('MMM d, yyyy').format(compDt) : (data['completedDate']?.toString() ?? '-');
+    final managerReview = data['managerReview'] ?? 'Pending';
+    final isApproved = managerReview.toString().toLowerCase() == 'approved';
 
     return GestureDetector(
       onTap: () {

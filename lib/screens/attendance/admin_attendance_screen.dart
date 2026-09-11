@@ -282,8 +282,8 @@ class _TeamAttendanceTabState extends State<_TeamAttendanceTab> {
               return StreamBuilder<QuerySnapshot>(
                 stream: FirestoreService.employeesCol.snapshots(),
                 builder: (context, empSnap) {
-                  final allAttDocs = attSnap.data?.docs ?? [];
-                  final empDocs = empSnap.data?.docs ?? [];
+                  final allAttDocs = attSnap.data?.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList() ?? [];
+                  final empDocs = empSnap.data?.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList() ?? [];
 
                   // Filter attendance docs for today
                   final attDocs = allAttDocs.where((doc) {

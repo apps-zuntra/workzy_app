@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -100,7 +100,7 @@ class _OvertimeReportScreenState extends State<OvertimeReportScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final users = usersSnapshot.data!.docs;
+                final users = usersSnapshot.data!.docs.where(FirestoreService.isDocInCurrentCompany).toList();
                 final employeeMap = <String, Map<String, dynamic>>{};
                 for (var u in users) {
                   final data = u.data() as Map<String, dynamic>;
@@ -123,6 +123,7 @@ class _OvertimeReportScreenState extends State<OvertimeReportScreen> {
                     Map<String, Map<String, dynamic>> fallbackUserInfo = {};
 
                     for (var recordDoc in recordsSnapshot.data!.docs) {
+                      if (!FirestoreService.isDocInCurrentCompany(recordDoc)) continue;
                       final data = recordDoc.data() as Map<String, dynamic>;
                       final dateTs = data['date'] as Timestamp?;
                       if (dateTs == null) continue;

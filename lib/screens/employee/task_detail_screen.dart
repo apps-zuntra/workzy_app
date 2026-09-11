@@ -105,33 +105,32 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 
   Widget _buildContent(Map<String, dynamic> data, String? docId) {
-    final title = data['title'] ?? data['taskName'] ?? 'Prepare Onboarding Docs';
-    final priority = data['priority'] ?? 'High';
+    final title = data['title'] ?? data['taskName'] ?? 'Untitled Task';
     final normStatus = _normalizeStatus(data);
-    final assignedBy = data['assignedBy'] ?? data['department'] ?? data['reporterName'] ?? 'VP HR';
+    final assignedBy = data['assignedBy'] ?? data['department'] ?? data['reporterName'] ?? 'Unassigned';
 
     // Due Date
     final dueDate = _parseDateTime(data['dueDate'] ?? data['due']);
     String dueDateStr = dueDate != null
         ? DateFormat('MMM d, yyyy').format(dueDate)
-        : (data['due']?.toString() ?? 'Aug 10, 2026');
+        : (data['due']?.toString() ?? 'No due date');
 
     // Est Hours
-    double estHours = (data['estimatedHours'] as num?)?.toDouble() ?? 4.0;
-    String estTimeStr = '${estHours.toInt()} hours';
+    double estHours = (data['estimatedHours'] as num?)?.toDouble() ?? 0.0;
+    String estTimeStr = estHours > 0 ? '${estHours.toInt()} hours' : 'Not set';
 
     // Timing data if in progress or started
     final isPaused = data['isPaused'] == true;
     final timerStart = _parseDateTime(data['timerStart'] ?? data['startedAt']);
     final startedTimeStr = timerStart != null
         ? DateFormat('hh:mm a').format(timerStart)
-        : '01:48 PM';
+        : '-';
 
-    final expectedFinishStr = timerStart != null
+    final expectedFinishStr = (timerStart != null && estHours > 0)
         ? DateFormat('hh:mm a').format(timerStart.add(Duration(hours: estHours.toInt())))
-        : '05:48 PM';
+        : '-';
 
-    int baseElapsed = (data['totalElapsedSeconds'] as num?)?.toInt() ?? 6000; // 1h 40m
+    int baseElapsed = (data['totalElapsedSeconds'] as num?)?.toInt() ?? 0;
     if (!isPaused && timerStart != null) {
       final diff = DateTime.now().difference(timerStart).inSeconds;
       if (diff > 0) baseElapsed += diff;
@@ -141,7 +140,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     int remainingSeconds = estSeconds - baseElapsed;
     if (remainingSeconds < 0) remainingSeconds = 0;
 
-    int progress = (data['progress'] as num?)?.toInt() ?? 65;
+    int progress = (data['progress'] as num?)?.toInt() ?? (estSeconds > 0 ? ((baseElapsed / estSeconds) * 100).clamp(0, 100).toInt() : 0);
 
     // Comments list from Firestore
     final List<dynamic> rawComments = data['comments'] as List<dynamic>? ?? [];
@@ -267,8 +266,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          data['description'] ??
-                              'Review and finalize wireframes for the mobile app v3. Check all user flows and export annotated screens.',
+                          (data['description'] as String?)?.trim().isNotEmpty == true
+                              ? data['description']
+                              : 'No description provided for this task.',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w400,

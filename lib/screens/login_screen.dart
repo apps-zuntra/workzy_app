@@ -1,14 +1,10 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'package:attendance_app/screens/auth_wrapper.dart';
 import 'package:attendance_app/screens/common/password_recovery_flow.dart';
 import 'package:attendance_app/theme/app_theme.dart';
-import 'package:attendance_app/utils/app_session.dart';
-import 'package:attendance_app/utils/firestore_service.dart';
 import 'package:attendance_app/utils/message_helper.dart';
-import 'package:attendance_app/utils/notification_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -21,17 +17,13 @@ class _LoginScreenState extends State<LoginScreen>
     with SingleTickerProviderStateMixin {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  final TextEditingController confirmPasswordController = TextEditingController();
 
   final FocusNode _emailFocus = FocusNode();
   final FocusNode _passwordFocus = FocusNode();
-  final FocusNode _confirmPasswordFocus = FocusNode();
 
   bool isLoading = false;
   bool _isPasswordVisible = false;
-  bool _isConfirmPasswordVisible = false;
   bool _isProcessingLogin = false;
-  bool _isSignupMode = false;
 
   late final AnimationController _animController;
   late final Animation<double> _fadeAnim;
@@ -43,7 +35,6 @@ class _LoginScreenState extends State<LoginScreen>
     _checkAutoLogin();
     _emailFocus.addListener(() => setState(() {}));
     _passwordFocus.addListener(() => setState(() {}));
-    _confirmPasswordFocus.addListener(() => setState(() {}));
 
     _animController = AnimationController(
       vsync: this,
@@ -79,10 +70,8 @@ class _LoginScreenState extends State<LoginScreen>
     _animController.dispose();
     _emailFocus.dispose();
     _passwordFocus.dispose();
-    _confirmPasswordFocus.dispose();
     emailController.dispose();
     passwordController.dispose();
-    confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -103,50 +92,11 @@ class _LoginScreenState extends State<LoginScreen>
       return;
     }
 
-    if (_isSignupMode) {
-      final confirm = confirmPasswordController.text.trim();
-      if (password != confirm) {
-        setState(() => isLoading = false);
-        _isProcessingLogin = false;
-        MessageHelper.showWarning(context, 'Passwords do not match');
-        return;
-      }
-      if (password.length < 6) {
-        setState(() => isLoading = false);
-        _isProcessingLogin = false;
-        MessageHelper.showWarning(context, 'Password must be at least 6 characters');
-        return;
-      }
-    }
-
     try {
-      UserCredential credential;
-      
-      if (_isSignupMode) {
-        // 1. Verify user is invited first
-        final approvedDoc = await FirestoreService.approvedUserDoc(email).get();
-        if (!approvedDoc.exists || approvedDoc.data() == null) {
-          setState(() => isLoading = false);
-          _isProcessingLogin = false;
-          MessageHelper.showError(
-            context,
-            'This email is not invited by any admin. Please contact your administrator.',
-          );
-          return;
-        }
-
-        // 2. Create the Auth record
-        credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
-      } else {
-        // Standard login
-        credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: email,
-          password: password,
-        );
-      }
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
 
       final currentUser = credential.user!;
       await currentUser.getIdToken(true);
@@ -160,9 +110,9 @@ class _LoginScreenState extends State<LoginScreen>
         );
       }
     } on FirebaseAuthException catch (e) {
-      String message = _isSignupMode ? 'Setup failed' : 'Authentication failed';
+      String message = 'Authentication failed';
       if (e.code == 'user-not-found') {
-        message = 'No account found for this email. If you are a new user, tap "Set your password".';
+        message = 'No account found for this email. Please contact your administrator.';
       } else if (e.code == 'wrong-password') {
         message = 'Incorrect password.';
       } else if (e.code == 'email-already-in-use') {
@@ -248,8 +198,8 @@ class _LoginScreenState extends State<LoginScreen>
                             ],
                           ),
                           const SizedBox(height: 32),
-                           Text(
-                            _isSignupMode ? 'Set Password' : 'Welcome Back',
+                          Text(
+                            'Welcome Back',
                             style: AppTheme.h1.copyWith(
                               fontSize: 28,
                               color: AppTheme.textPrimary,
@@ -258,9 +208,7 @@ class _LoginScreenState extends State<LoginScreen>
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            _isSignupMode
-                                ? 'Create a password for your invited email'
-                                : 'Sign in to your account to continue',
+                            'Sign in to your account to continue',
                             style: AppTheme.bodyMedium.copyWith(
                               color: AppTheme.textMuted,
                             ),
@@ -277,7 +225,7 @@ class _LoginScreenState extends State<LoginScreen>
                           _buildInputField(
                             controller: passwordController,
                             focusNode: _passwordFocus,
-                            hint: _isSignupMode ? 'Create Password' : 'Password',
+                            hint: 'Password',
                             icon: Icons.lock_outline_rounded,
                             isPassword: true,
                             isVisible: _isPasswordVisible,
@@ -287,25 +235,8 @@ class _LoginScreenState extends State<LoginScreen>
                               );
                             },
                           ),
-                          if (_isSignupMode) ...[
-                            const SizedBox(height: 16),
-                            _buildInputField(
-                              controller: confirmPasswordController,
-                              focusNode: _confirmPasswordFocus,
-                              hint: 'Confirm Password',
-                              icon: Icons.lock_outline_rounded,
-                              isPassword: true,
-                              isVisible: _isConfirmPasswordVisible,
-                              onToggleVisibility: () {
-                                setState(
-                                  () => _isConfirmPasswordVisible = !_isConfirmPasswordVisible,
-                                );
-                              },
-                            ),
-                          ],
                           const SizedBox(height: 12),
-                          if (!_isSignupMode)
-                            Align(
+                          Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(
                               onPressed: () {
@@ -331,8 +262,8 @@ class _LoginScreenState extends State<LoginScreen>
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
-                              ),
                             ),
+                          ),
                           const Spacer(),
                           Center(
                             child: SizedBox(
@@ -357,9 +288,9 @@ class _LoginScreenState extends State<LoginScreen>
                                           strokeWidth: 2.5,
                                         ),
                                       )
-                                    : Text(
-                                        _isSignupMode ? 'Set Password & Login' : 'Sign In',
-                                        style: const TextStyle(
+                                    : const Text(
+                                        'Sign In',
+                                        style: TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -368,89 +299,6 @@ class _LoginScreenState extends State<LoginScreen>
                             ),
                           ),
                           const SizedBox(height: 16),
-                          if (!_isSignupMode) ...[
-                            Center(
-                              child: SizedBox(
-                                width: 327,
-                                height: 51,
-                                child: OutlinedButton(
-                                  onPressed: () {
-                                    MessageHelper.showWarning(
-                                      context,
-                                      'Google sign-in is not configured yet.',
-                                    );
-                                  },
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppTheme.textPrimary,
-                                    backgroundColor: Colors.white,
-                                    side: const BorderSide(color: Color(0xFFE5E7EB)),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Container(
-                                        width: 20,
-                                        height: 20,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: AppTheme.textPrimary,
-                                            width: 1.5,
-                                          ),
-                                        ),
-                                        alignment: Alignment.center,
-                                        child: const Text(
-                                          'G',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppTheme.textPrimary,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      const Text(
-                                        'Sign in with Google',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 18),
-                          // Toggle between login and set password mode
-                          Center(
-                            child: TextButton(
-                              onPressed: () {
-                                setState(() {
-                                  _isSignupMode = !_isSignupMode;
-                                  passwordController.clear();
-                                  confirmPasswordController.clear();
-                                });
-                              },
-                              style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF5C5CFF),
-                              ),
-                              child: Text(
-                                _isSignupMode
-                                    ? 'Already have a password? Sign in'
-                                    : 'First time user? Set your password',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ),

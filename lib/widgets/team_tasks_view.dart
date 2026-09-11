@@ -175,7 +175,7 @@ class _TeamTasksViewState extends State<TeamTasksView> {
           return const Center(child: CircularProgressIndicator());
         }
         
-        final allTasks = tasksSnapshot.data?.docs ?? [];
+        final allTasks = tasksSnapshot.data?.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList() ?? [];
         
         int totalAssigned = 0;
         int totalInProgress = 0;
@@ -198,7 +198,7 @@ class _TeamTasksViewState extends State<TeamTasksView> {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final allUsers = usersSnapshot.data?.docs ?? [];
+            final allUsers = usersSnapshot.data?.docs.where((d) => FirestoreService.isDocInCurrentCompany(d)).toList() ?? [];
             final myDept = (AppSession().userDepartment ?? '').toString().trim().toLowerCase();
 
             final filteredUsers = allUsers.where((doc) {
