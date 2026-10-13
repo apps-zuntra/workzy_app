@@ -42,6 +42,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    if (AppSession().isDemoMode) {
+      return _navigateToMain();
+    }
+
     return FutureBuilder<User?>(
       future: _initialAuthFuture,
       builder: (context, authSnapshot) {

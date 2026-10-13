@@ -5,6 +5,7 @@ import 'package:attendance_app/screens/auth_wrapper.dart';
 import 'package:attendance_app/screens/common/password_recovery_flow.dart';
 import 'package:attendance_app/theme/app_theme.dart';
 import 'package:attendance_app/utils/message_helper.dart';
+import 'package:attendance_app/utils/app_session.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -92,6 +93,16 @@ class _LoginScreenState extends State<LoginScreen>
       return;
     }
 
+    // Play Store Review Bypass Credentials Check
+    if ((email == 'playstore.test@workzi.app' || 
+         email == 'google.reviewer@workzi.app' || 
+         email == 'playstore@workzi.com' ||
+         email == 'demo@workzi.app') &&
+        (password == 'Playstore@2026' || password == 'workzi1234' || password == 'demo1234')) {
+      _bypassDemoLogin(role: 'super_admin');
+      return;
+    }
+
     try {
       final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
@@ -135,6 +146,39 @@ class _LoginScreenState extends State<LoginScreen>
       if (mounted) {
         setState(() => isLoading = false);
       }
+    }
+  }
+
+  void _bypassDemoLogin({String role = 'super_admin'}) {
+    FocusScope.of(context).unfocus();
+    setState(() => isLoading = true);
+
+    // Initialize full bypass mock session for Play Store review team
+    AppSession().clear();
+    AppSession().isDemoMode = true;
+    AppSession().populate(
+      uid: 'playstore_demo_reviewer',
+      email: 'playstore.reviewer@workzi.app',
+      role: role,
+      companyId: 'demo_organization',
+      companyName: 'Workzi Demo Enterprise',
+      userName: role == 'super_admin' ? 'Google Play Reviewer (Admin)' : 'Google Play Reviewer',
+      department: 'Quality Assurance & Review',
+      officeLat: 13.0827,
+      officeLng: 80.2707,
+      allowedRadius: 10000,
+      shiftStartTime: '09:00',
+      shiftEndTime: '18:00',
+      gracePeriod: 30,
+      paidLeavesPerYear: 24,
+    );
+
+    if (mounted) {
+      setState(() => isLoading = false);
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthWrapper()),
+        (route) => false,
+      );
     }
   }
 
@@ -298,7 +342,30 @@ class _LoginScreenState extends State<LoginScreen>
                               ),
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
+                          Center(
+                            child: TextButton.icon(
+                              onPressed: isLoading ? null : () => _bypassDemoLogin(role: 'super_admin'),
+                              icon: const Icon(
+                                Icons.shield_outlined,
+                                size: 15,
+                                color: Color(0xFF6B7280),
+                              ),
+                              label: const Text(
+                                'Play Store Review Access (Demo Mode)',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF6B7280),
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
                         ],
                       ),
                     ),

@@ -18,6 +18,7 @@ class AppSession {
   String? userName;
   String? department;
   String? get userDepartment => department;
+  bool isDemoMode = false;
 
   // â”€â”€ Company Office Location (fetched from organizations doc) â”€â”€â”€â”€â”€â”€â”€â”€â”€
   double? officeLat;
@@ -190,5 +191,6 @@ class AppSession {
     gracePeriod = 15;
     paidLeavesPerYear = 12;
     featurePermissions = {};
+    isDemoMode = false;
   }
 }

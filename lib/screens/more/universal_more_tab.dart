@@ -23,6 +23,7 @@ class _UniversalMoreTabState extends State<UniversalMoreTab> {
   Future<void> _handleSignOut() async {
     try {
       await FirebaseAuth.instance.signOut();
+      AppSession().clear();
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const LoginScreen()),

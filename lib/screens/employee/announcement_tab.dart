@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:attendance_app/utils/firestore_service.dart';
+import 'package:attendance_app/utils/app_session.dart';
 
 class EmployeeAnnouncementTab extends StatefulWidget {
   const EmployeeAnnouncementTab({super.key});
@@ -161,7 +163,10 @@ class _EmployeeAnnouncementTabState extends State<EmployeeAnnouncementTab> {
       final data = snapshot.data() as Map<String, dynamic>?;
       final currentLikes = data?['likes'] ?? 0;
       transaction.update(ref, {'likes': currentLikes + 1});
-    }).catchError((error) => debugPrint("Failed to update likes: $error"));
+    }).catchError((error) {
+      debugPrint("Failed to update likes: $error");
+      return null;
+    });
   }
 
   Widget _buildAnnouncementCard(DocumentSnapshot doc, {Key? key}) {
